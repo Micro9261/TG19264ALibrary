@@ -8,6 +8,7 @@
 #define F_CPU 16000000UL
 
 #include "..\include\TG19264A_atmegaDriver.h"
+#include "..\include\fonts.h"
 #include <inttypes.h>
 #include <xc.h>
 #include <util/delay.h>
@@ -103,7 +104,7 @@ static void setAddress(uint8_t page, uint8_t col)
 }
 
 /*
-Sends data do selected address, chipID for selecting part 1=left 2=middle 4=right
+Sends data to selected address, chipID for selecting part 1=left 2=middle 4=right
 sum for simultaneously turning few segments*/
 static void sendData(uint8_t size, const uint8_t * buff)
 {
@@ -491,6 +492,32 @@ Draws line from pointA to pointB
 */
 void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
 {
+	uint8_t startX, startY;
+	uint8_t endX, endY;
+	if (posXpointA < posXpointB)
+	{
+		startX = posXpointB;
+		endX = posXpointA;
+		startY = posYpointB;
+		endY = posYpointA;
+	}
+	else
+	{
+		startX = posXpointA;
+		endX = posXpointB;
+		startY = posYpointA;
+		endY = posYpointB;
+	}
+	uint8_t dotsX = endX - startX;
+	int8_t dotsY = endY - startY;
+	
+	uint8_t BytesToSend[3];
+	uint8_t chipID;
+	uint8_t cschangesNeeded = getSendBytesInfo(startX, endX, BytesToSend, chipID);
+	uint8_t colToSend;
+	uint8_t iteration = 0;
+	
+	
 	
 }
 
@@ -499,10 +526,41 @@ Draws desired rectangle
 */
 void drawRectangle(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY)
 {
-	drawLine(posX,posX,posX,posY+sizeY);
-	drawLine(posX,posY+sizeY, posX +sizeX, posY+sizeY);
-	drawLine(posX+sizeX,posY+sizeY, posX+sizeX, posY);
-	drawLine(posX+sizeX,posY, posX,posY);
+	drawLine(posX, posX, posX, posY+sizeY);
+	drawLine(posX, posY+sizeY, posX +sizeX, posY+sizeY);
+	drawLine(posX+sizeX, posY+sizeY, posX+sizeX, posY);
+	drawLine(posX+sizeX, posY, posX, posY);
+}
+
+
+/************************************************************************/
+/* Writes text from (posX,posY) with given height of letters            */
+/************************************************************************/
+void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, const char * text)
+{
+	const uint8_t ** ptr = NULL;
+	uint8_t charWidth = 0;
+	uint8_t charHight = 0;
+	uint8_t charSpace = 2;
+	if (height == 7)
+	{
+		ptr = Font8x5;
+		charHight = 8;
+		charWidth = 5
+	}
+	while (*text != '\0')
+	{
+		if (posY + charHight >= YPoints)
+			posY -= (posY + charHight - YPoints);
+		if (posX + charWidth >= XPoints)
+		{
+			posX = 0;
+			posY -= charHight;
+		}
+		drawImage(posX,posY,charWidth,charHight,ptr[*text]);
+		posX += charWidth + charSpace;
+		text++;
+	}
 }
 
 /*
