@@ -42,9 +42,9 @@ point B(posXpointB,posYpointB)                                          */
 void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB);
 
 /************************************************************************/
-/* Writes text from (posX,posY) with given height of letters            */
+/* Writes text from (posX,posY) with given height of letters and space between them            */
 /************************************************************************/
-void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, const char * text);
+void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, uint8_t space, const char * text);
 
 /************************************************************************/
 /* Turns display off, chipID for selecting part 1=left 2=middle 4=right 

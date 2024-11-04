@@ -241,8 +241,8 @@ static uint8_t getSendBytesInfo(uint8_t min, uint8_t max, uint8_t * BytesToSendB
 	}
 	else if (1 == csChanges)
 	{
-		BytesToSendBuff[*chipIDStart] = XPointsPerChip - min;
-		BytesToSendBuff[*chipIDStart + 1] = max - XPointsPerChip;
+		BytesToSendBuff[*chipIDStart] = (*chipIDStart + 1) * XPointsPerChip - min;
+		BytesToSendBuff[*chipIDStart + 1] = max - (*chipIDStart + 1) *XPointsPerChip;
 	}
 	else if (2 == csChanges)
 	{
@@ -252,6 +252,7 @@ static uint8_t getSendBytesInfo(uint8_t min, uint8_t max, uint8_t * BytesToSendB
 	}
 	else
 		return BadValue;
+		
 	return csChanges + 1;
 }
 
@@ -444,8 +445,9 @@ Prints image from buff in given X,Y coordinates
 */
 void drawImage(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY, const uint8_t * buff)
 {
-	if (posX > XPoints - 1 || posY > YPoints - 1)
+	if (posX + sizeX > XPoints || posY + sizeY> YPoints)
 		return;
+	
 	uint8_t colStart = posX%XPointsPerChip;
 	uint8_t pageSup = (posY + sizeY - 1)/YPointsPerPage;
 	uint8_t pageInf = posY/YPointsPerPage;
@@ -536,12 +538,11 @@ void drawRectangle(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY)
 /************************************************************************/
 /* Writes text from (posX,posY) with given height of letters            */
 /************************************************************************/
-void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, const char * text)
+void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, uint8_t space, const char * text)
 {
 	const uint8_t (*ptr)[5];
 	uint8_t charWidth = 0;
 	uint8_t charHight = 0;
-	uint8_t charSpace = 2;
 	if (height == 7)
 	{
 		ptr = Font8x5;
@@ -558,7 +559,7 @@ void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, const char * text)
 			posY -= charHight;
 		}
 		drawImage(posX,posY,charWidth,charHight,ptr[(uint8_t)*text]);
-		posX += charWidth + charSpace;
+		posX += charWidth + space;
 		text++;
 	}
 }
