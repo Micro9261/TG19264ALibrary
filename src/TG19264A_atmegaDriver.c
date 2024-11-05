@@ -41,6 +41,22 @@
 
 uint8_t pageBuff[64]; //for library use only. Internal buffer!
 
+//struct for acquiring information about bytes to send per chipId and chipID for start
+typedef struct 
+{
+	uint8_t BytesPerChip[3];
+	uint8_t StartchipID;
+} chipTransferInfo;
+
+//Gives needed information to functions about starting point, offset for mask and bytes to send;
+typedef struct
+{
+	uint8_t page;
+	uint8_t col;
+	uint8_t offset;
+	uint8_t BytesToSend;
+} sendParam;
+
 static void selectChip(uint8_t ID)
 {
 	if (leftSeg & ID)
@@ -229,26 +245,27 @@ uint8_t getStatDisplay(uint8_t chipID)
 return chipIDStart which indicates starting display number and function returns
 number of chips select changes needed                                */
 /************************************************************************/
-static uint8_t getSendBytesInfo(uint8_t min, uint8_t max, uint8_t * BytesToSendBuff, uint8_t * chipIDStart)
+//static uint8_t getSendBytesInfo(uint8_t min, uint8_t max, uint8_t * BytesToSendBuff, uint8_t * chipIDStart)
+static uint8_t getSendBytesInfo(uint8_t min, uint8_t max, chipTransferInfo * info)
 {
-	*chipIDStart = min / XPointsPerChip;
+	info->StartchipID = min / XPointsPerChip;
 	uint8_t chipIDend = (max - 1)/XPointsPerChip;
-	uint8_t csChanges = chipIDend - *chipIDStart;
+	uint8_t csChanges = chipIDend - info->StartchipID;
 	
 	if (0 == csChanges)
 	{
-		BytesToSendBuff[*chipIDStart] = max - min;
+		info->BytesPerChip[info->StartchipID] = max - min;
 	}
 	else if (1 == csChanges)
 	{
-		BytesToSendBuff[*chipIDStart] = (*chipIDStart + 1) * XPointsPerChip - min;
-		BytesToSendBuff[*chipIDStart + 1] = max - (*chipIDStart + 1) *XPointsPerChip;
+		info->BytesPerChip[info->StartchipID] = (info->StartchipID + 1) * XPointsPerChip - min;
+		info->BytesPerChip[info->StartchipID + 1] = max - (info->StartchipID + 1) *XPointsPerChip;
 	}
 	else if (2 == csChanges)
 	{
-		BytesToSendBuff[*chipIDStart] = XPointsPerChip - min;
-		BytesToSendBuff[*chipIDStart + 1] = XPointsPerChip;
-		BytesToSendBuff[*chipIDStart + 2] = max - 2*XPointsPerChip;
+		info->BytesPerChip[info->StartchipID] = XPointsPerChip - min;
+		info->BytesPerChip[info->StartchipID + 1] = XPointsPerChip;
+		info->BytesPerChip[info->StartchipID + 2] = max - 2*XPointsPerChip;
 	}
 	else
 		return BadValue;
@@ -313,28 +330,30 @@ static inline uint8_t makeReverseMask(uint8_t bits)
 /************************************************************************/
 /* fills page  from given col by pattern                                */
 /************************************************************************/
-static inline void fillPage(uint8_t page, uint8_t col, uint8_t pattern, uint8_t numOfBytes)
+//static inline void fillPage(uint8_t page, uint8_t col, uint8_t pattern, uint8_t numOfBytes)
+static inline void fillPage(const sendParam * param)
 {
-	setAddress(page,col);
-	for (uint8_t i = 0; i < numOfBytes; i++)
-		sendByte(pattern);
+	setAddress(param->page,param->col);
+	for (uint8_t i = 0; i < param->BytesToSend; i++)
+		sendByte(param->offset);
 }
 
 
 /************************************************************************/
 /* Clears selected area by mask bits, invert for Up rows.               */
 /************************************************************************/
-static inline void clearMaskPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, uint8_t invert)
+//static inline void clearMaskPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, uint8_t invert)
+static inline void clearMaskPage(const sendParam * param, uint8_t invert)
 {
-	setAddress(page, col);
-	readData(BytesToSend,pageBuff);
-	uint8_t maskUp = makeMask(bits);
+	setAddress(param->page, param->col);
+	readData(param->BytesToSend,pageBuff);
+	uint8_t maskUp = makeMask(param->offset);
 	if (invert)
 		maskUp = ~maskUp;
-	for (uint8_t i = 0; i <BytesToSend; i++)
+	for (uint8_t i = 0; i < param->BytesToSend; i++)
 		pageBuff[i] = pageBuff[i] & maskUp;
-	setAddress(page, col);
-	for (uint8_t i = 0; i < BytesToSend; i++)
+	setAddress(param->page, param->col);
+	for (uint8_t i = 0; i < param->BytesToSend; i++)
 		sendByte(pageBuff[i]);
 }
 
@@ -353,11 +372,11 @@ void clearDisplay(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY)
 	uint8_t pagesToChange = pageSup - pageInf + 1;
 	pageSup = 0x07 & ~pageSup;		//change direction of pages from 7->0, to 0->7
 	
-	uint8_t BytesToSend[3];
-	uint8_t chipID;
-	uint8_t csChangesNeeded = getSendBytesInfo(posX,posX+sizeX,BytesToSend,&chipID);
+	chipTransferInfo TransInfo;
+	uint8_t csChangesNeeded = getSendBytesInfo(posX,posX+sizeX,&TransInfo);
 	uint8_t colToSend;
 	uint8_t iteration = 0;
+	sendParam TxInfo;
 	while (csChangesNeeded--)
 	{
 		if (0 == iteration++)
@@ -365,17 +384,29 @@ void clearDisplay(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY)
 		else
 		colToSend = 0;
 		
-		selectChipOne(chipID);
+		selectChipOne(TransInfo.StartchipID);
 		for(uint8_t i = 0; i < pagesToChange; i++)
 		{
+			TxInfo.BytesToSend = TransInfo.BytesPerChip[TransInfo.StartchipID];
+			TxInfo.col = colToSend;
+			TxInfo.page = pageSup + i;
 			if (0 == i && rowsSup != 0)
-			clearMaskPage(pageSup, colToSend,rowsSup, BytesToSend[chipID],true);
-			else if (pagesToChange - 1 == i && rowsInf != 0)
-			clearMaskPage(pageSup + i, colToSend,rowsInf, BytesToSend[chipID],false);
+			{
+				TxInfo.offset = rowsSup;
+				clearMaskPage(&TxInfo, true); //reverse mask 
+			}
+			else if (0 == i && rowsInf != 0)
+			{
+				TxInfo.offset = rowsInf;
+				clearMaskPage(&TxInfo, false); //don't reverse mask
+			}
 			else
-			fillPage(pageSup + i, colToSend, 0x00, BytesToSend[chipID]);
+			{
+				TxInfo.offset = 0x00; // used as pattern for every byte not offset!
+				fillPage(&TxInfo);
+			}
 		}
-		deselectChipOne(chipID++);
+		deselectChipOne(TransInfo.StartchipID++);
 	}
 }
 
@@ -401,47 +432,50 @@ void reverseDisplayCol(void)
 	}
 }
 
-static inline void DrawMaskPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, uint8_t invert, const uint8_t * image)
+//Creates images using mask based on bits needed to be cleared, work only on selected rows from up or down (selection by inverting mask)
+//static inline void DrawMaskPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, uint8_t invert, const uint8_t * image)
+static inline void DrawMaskPage(const sendParam * param, uint8_t invert, const uint8_t * image)
 {
-	setAddress(page, col);
-	readData(BytesToSend,pageBuff);
-	uint8_t maskUp = makeMask(bits);
+	setAddress(param->page, param->col);
+	readData(param->BytesToSend,pageBuff);
+	uint8_t maskUp = makeMask(param->offset);
 	if (invert)
 		maskUp = ~maskUp;
-	for (uint8_t i = 0; i <BytesToSend; i++)
+	for (uint8_t i = 0; i < param->BytesToSend; i++)
 	{
 		pageBuff[i] = pageBuff[i] & maskUp;
 		if (invert)
-			pageBuff[i] |= (image[i] << (8 - bits) );
+			pageBuff[i] |= (image[i] << (8 - param->offset) );
 		else
-			pageBuff[i] |= (image[i] >> bits );
+			pageBuff[i] |= (image[i] >> param->offset );
 	}
-	setAddress(page, col);
-	for (uint8_t i = 0; i < BytesToSend; i++)
+	setAddress(param->page, param->col);
+	for (uint8_t i = 0; i < param->BytesToSend; i++)
 		sendByte(pageBuff[i]);
 }
 
-static inline void DrawPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, const uint8_t * imageBefore, const uint8_t * imageNow)
+//Creates images using mask based on bits needed to be cleared, work on all rows
+//static inline void DrawPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, const uint8_t * imageBefore, const uint8_t * imageNow)
+static inline void DrawPage(const sendParam * param, const uint8_t * imageBefore, const uint8_t * imageNow)
 {
-	setAddress(page,col);
-	uint8_t topMask = makeMask(bits);
+	setAddress(param->page, param->col);
+	uint8_t topMask = makeMask(param->offset);
 	uint8_t offsetDown;
-	if (bits == 0)
+	if (param->offset == 0)
 		offsetDown = 0;
 	else
-		offsetDown = 8 - bits;
-	for (uint8_t i = 0; i < BytesToSend; i++)
+		offsetDown = 8 - param->offset;
+	for (uint8_t i = 0; i < param->BytesToSend; i++)
 	{
 		pageBuff[i] = (imageNow[i] & ~topMask) >> offsetDown;
-		if (bits != 0)
-			pageBuff[i] |= (imageBefore[i] & topMask) << bits;
+		if (param->offset != 0)
+			pageBuff[i] |= (imageBefore[i] & topMask) << param->offset;
 	}
-	sendData(BytesToSend,pageBuff);
+	sendData(param->BytesToSend,pageBuff);
 }
 
 /*
-TODO number 2 priority
-Prints image from buff in given X,Y coordinates
+Prints image from buff in given X,Y coordinates with defined sizeX x sizeY image size
 */
 void drawImage(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY, const uint8_t * buff)
 {
@@ -456,14 +490,14 @@ void drawImage(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY, const u
 	uint8_t pagesToChange = pageSup - pageInf + 1;
 	pageSup = 0x07 & ~pageSup;
 	
-	uint8_t BytesToSend[3];
-	uint8_t chipID;
-	uint8_t csChangesNeeded = getSendBytesInfo(posX,posX+sizeX,BytesToSend,&chipID);
+	chipTransferInfo TransInfo;
+	uint8_t csChangesNeeded = getSendBytesInfo(posX,posX+sizeX,&TransInfo);
 	uint8_t colToSend;
 	uint8_t iteration = 0;
 	
 	uint8_t startXPointer = 0;
 	uint16_t startYPointer = 0;
+	sendParam TxInfo;
 	while (csChangesNeeded--)
 	{
 		if (0 == iteration++)
@@ -471,20 +505,28 @@ void drawImage(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY, const u
 		else
 		colToSend = 0;
 		
-		selectChipOne(chipID);
+		selectChipOne(TransInfo.StartchipID);
 		startYPointer = 0;
 		for(uint8_t i = 0; i < pagesToChange; i++)
 		{
-			if (0 == i && rowsSup != 0 )
-				DrawMaskPage(pageSup, colToSend,rowsSup, BytesToSend[chipID],true, buff + startXPointer + startYPointer );
+			TxInfo.BytesToSend = TransInfo.BytesPerChip[TransInfo.StartchipID];
+			TxInfo.col = colToSend;
+			TxInfo.page = pageSup + i;
+			TxInfo.offset = rowsSup;
+			const uint8_t* setBuffAddress  = buff + startXPointer + startYPointer;
+			if (0 == i && rowsSup != 0)
+				DrawMaskPage(&TxInfo, true, setBuffAddress);
 			else if (pagesToChange - 1 == i && rowsInf != 0)
-				DrawMaskPage(pageSup + i, colToSend,rowsInf, BytesToSend[chipID],false, buff + startXPointer + startYPointer - sizeY);
+			{
+				TxInfo.offset = rowsInf;
+				DrawMaskPage(&TxInfo, false, setBuffAddress - sizeY);
+			}
 			else
-				DrawPage(pageSup + i, colToSend, rowsSup, BytesToSend[chipID], buff + startXPointer + startYPointer - sizeY, buff + startXPointer + startYPointer );
+				DrawPage(&TxInfo, setBuffAddress - sizeY, setBuffAddress);
 			startYPointer += sizeY;
 		}
-		deselectChipOne(chipID);
-		startXPointer += BytesToSend[chipID++];
+		deselectChipOne(TransInfo.StartchipID++);
+		startXPointer += TxInfo.BytesToSend;
 	}
 }
 
@@ -513,13 +555,10 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 	uint8_t dotsX = endX - startX;
 	int8_t dotsY = endY - startY;
 	
-	uint8_t BytesToSend[3];
-	uint8_t chipID;
-	uint8_t cschangesNeeded = getSendBytesInfo(startX, endX, BytesToSend, &chipID);
+	chipTransferInfo TransInfo;
+	uint8_t cschangesNeeded = getSendBytesInfo(startX, endX, &TransInfo);
 	uint8_t colToSend;
 	uint8_t iteration = 0;
-	
-	
 	
 }
 
