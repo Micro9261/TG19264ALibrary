@@ -2,7 +2,7 @@
  * TG19264A_atmegaDriver.c
  *
  * Created: 10/18/2024 9:50:52 PM
- *  Author: pawel
+ *  Author: Micro9261
  */ 
 
 #define F_CPU 16000000UL
@@ -330,7 +330,6 @@ static inline uint8_t makeReverseMask(uint8_t bits)
 /************************************************************************/
 /* fills page  from given col by pattern                                */
 /************************************************************************/
-//static inline void fillPage(uint8_t page, uint8_t col, uint8_t pattern, uint8_t numOfBytes)
 static inline void fillPage(const sendParam * param)
 {
 	setAddress(param->page,param->col);
@@ -342,7 +341,6 @@ static inline void fillPage(const sendParam * param)
 /************************************************************************/
 /* Clears selected area by mask bits, invert for Up rows.               */
 /************************************************************************/
-//static inline void clearMaskPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, uint8_t invert)
 static inline void clearMaskPage(const sendParam * param, uint8_t invert)
 {
 	setAddress(param->page, param->col);
@@ -353,8 +351,7 @@ static inline void clearMaskPage(const sendParam * param, uint8_t invert)
 	for (uint8_t i = 0; i < param->BytesToSend; i++)
 		pageBuff[i] = pageBuff[i] & maskUp;
 	setAddress(param->page, param->col);
-	for (uint8_t i = 0; i < param->BytesToSend; i++)
-		sendByte(pageBuff[i]);
+	sendData(param->BytesToSend,pageBuff);
 }
 
 /************************************************************************/
@@ -433,7 +430,6 @@ void reverseDisplayCol(void)
 }
 
 //Creates images using mask based on bits needed to be cleared, work only on selected rows from up or down (selection by inverting mask)
-//static inline void DrawMaskPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, uint8_t invert, const uint8_t * image)
 static inline void DrawMaskPage(const sendParam * param, uint8_t invert, const uint8_t * image)
 {
 	setAddress(param->page, param->col);
@@ -450,12 +446,10 @@ static inline void DrawMaskPage(const sendParam * param, uint8_t invert, const u
 			pageBuff[i] |= (image[i] >> param->offset );
 	}
 	setAddress(param->page, param->col);
-	for (uint8_t i = 0; i < param->BytesToSend; i++)
-		sendByte(pageBuff[i]);
+	sendData(param->BytesToSend,pageBuff);
 }
 
 //Creates images using mask based on bits needed to be cleared, work on all rows
-//static inline void DrawPage(uint8_t page, uint8_t col, uint8_t bits, uint8_t BytesToSend, const uint8_t * imageBefore, const uint8_t * imageNow)
 static inline void DrawPage(const sendParam * param, const uint8_t * imageBefore, const uint8_t * imageNow)
 {
 	setAddress(param->page, param->col);
@@ -530,6 +524,36 @@ void drawImage(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY, const u
 	}
 }
 
+typedef struct
+{
+	uint8_t firstSegLen; // how many bits to write first
+	uint8_t yChangeLen;	// after how many bits change row
+	uint8_t upDown; // 1 when A_posY > B_posY, -1 when A_posY < B_posY, 0 when A_posY == B_posY
+} stepInfo_st;
+
+/************************************************************************/
+/* Creates buffer drawing line specify by StepInfo_st starting from sendParam
+and sends data to display                                                                     */
+/************************************************************************/
+static inline void createSendLine(const sendParam * param, const stepInfo_st * step)
+{
+	setAddress(param->page, param->col);
+	readData(param->BytesToSend,pageBuff);
+	uint8_t rowToWrite = param->offset; // indicates where turn bit on for line
+	for (uint8_t i = 0; i < step->firstSegLen; i++)
+		pageBuff[i] |= (1 << rowToWrite);
+	rowToWrite++;
+	for (uint8_t i = 0; i < (param->BytesToSend - step->firstSegLen); i++)
+	{
+		pageBuff |= (1 << rowToWrite);
+		if (i % step->yChangeLen == 0)
+			rowToWrite++;
+	}
+	setAddress(param->page, param->col);
+	sendData(param->BytesToSend, pageBuff);
+}
+
+
 /*
 TODO number 3 priority;
 Draws line from pointA to pointB
@@ -538,7 +562,8 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 {
 	uint8_t startX, startY;
 	uint8_t endX, endY;
-	if (posXpointA < posXpointB)
+	
+	if (posXpointA > posXpointB) // Drawing from left to right side
 	{
 		startX = posXpointB;
 		endX = posXpointA;
@@ -552,13 +577,50 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 		startY = posYpointA;
 		endY = posYpointB;
 	}
+	uint8_t pageInf = endY % YPointsPerPage;
+	uint8_t pageSup = (endX - 1) % YPointsPerPage;
+	uint8_t pagesToChange;
+	if (pageInf < pageSup)
+		pagesToChange = pageSup - pageInf + 1;
+	else
+		pagesToChange = pageInf - pageSup + 1;
+	uint8_t colStart = startX % XPointsPerChip;
 	uint8_t dotsX = endX - startX;
 	int8_t dotsY = endY - startY;
 	
-	chipTransferInfo TransInfo;
-	uint8_t cschangesNeeded = getSendBytesInfo(startX, endX, &TransInfo);
+	chipTransferInfo transInfo;
+	
+	
+	stepInfo_st stepInfo;
+	stepInfo.yChangeLen = stepInfo.firstSegLen = dotsX / dotsY;
+	if (dotsY > 0)
+		stepInfo.upDown = 1;
+	else if (dotsY < 0)
+		stepInfo.upDown = -1;
+	else
+		stepInfo.upDown = 0;
+			
+	sendParam txInfo;
 	uint8_t colToSend;
 	uint8_t iteration = 0;
+	uint8_t cschangesNeeded = getSendBytesInfo(startX, endX, &transInfo);
+	uint8_t BytesSent;
+	while (cschangesNeeded--)
+	{
+		if (0 == iteration++)
+			colToSend = colStart;
+		else
+			colToSend = 0;
+		BytesSent = 0;
+		selectChipOne(transInfo.StartchipID);
+		for(uint8_t i = 0; i < pagesToChange; i++)
+		{
+			txInfo.BytesToSend = transInfo.BytesPerChip[transInfo.StartchipID] - BytesSent;
+			txInfo.col = colToSend;
+			txInfo.page = pageSup + i;
+		}
+		deselectChipOne(transInfo.StartchipID++);
+	}
 	
 }
 

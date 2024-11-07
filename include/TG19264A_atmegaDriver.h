@@ -2,7 +2,7 @@
  * TG19264A_atmegaDriver.h
  *
  * Created: 10/18/2024 9:51:20 PM
- *  Author: pawel
+ *  Author: Micro9261
  */ 
 
 
