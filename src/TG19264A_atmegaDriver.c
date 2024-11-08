@@ -535,19 +535,25 @@ typedef struct
 /* Creates buffer drawing line specify by StepInfo_st starting from sendParam
 and sends data to display                                                                     */
 /************************************************************************/
-static inline void createSendLine(const sendParam * param, const stepInfo_st * step)
+static inline void createSendLine(const sendParam * param, const stepInfo_st * step, uint8_t dir)
 {
 	setAddress(param->page, param->col);
 	readData(param->BytesToSend,pageBuff);
 	uint8_t rowToWrite = param->offset; // indicates where turn bit on for line
+	uint8_t rowChangeEnable = dir != 0;
 	for (uint8_t i = 0; i < step->firstSegLen; i++)
 		pageBuff[i] |= (1 << rowToWrite);
 	rowToWrite++;
 	for (uint8_t i = 0; i < (param->BytesToSend - step->firstSegLen); i++)
 	{
 		pageBuff |= (1 << rowToWrite);
-		if (i % step->yChangeLen == 0)
-			rowToWrite++;
+		if (i % step->yChangeLen == 0 && rowChangeEnable)
+		{
+			if (-1 == dir)
+				rowToWrite--;
+			else if (1 == dir)
+				rowToWrite++;
+		}
 	}
 	setAddress(param->page, param->col);
 	sendData(param->BytesToSend, pageBuff);
@@ -558,6 +564,52 @@ static inline void createSendLine(const sendParam * param, const stepInfo_st * s
 TODO number 3 priority;
 Draws line from pointA to pointB
 */
+void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
+{
+	//if values above max value, don't execute cmd
+	if (posXpointA >= XPoints || posXpointB >= XPoints
+		|| posYpointA >= YPoints || posYpointB >= YPoints)
+		return;
+	
+	uint8_t setX, setY; //coordinates of start point
+	uint8_t endX, endY; //coordinates of end point
+	if (posXpointA > posXpointB) // sets coordinates for writing to display from left to right;
+	{
+		setX = posXpointB;
+		setY = posYpointB;
+		endX = posXpointA;
+		endY = posYpointA;
+	}
+	else
+	{
+		setX = posXpointA;
+		setY = posYpointA;
+		endX = posXpointB;
+		endY = posYpointB;
+	}
+	//check direction of writing pages, -1 => form 0 ~ 7 if 1 => from 7 ~ 0, if 0 don't change;
+	int8_t yDir = endY - setY ? (endY - setY < 0) ? -1 : 1 : 0; // if endY == setY yDir = 0, else if result negative yDir = -1, else yDir = 1
+	uint8_t pixelChangeVal; // indicates after how many x/y dots, y/x must be inc/dec (needed for lines when endY - setY != 0
+	uint8_t verHorLine; // if 1 line more vertical, if -1 line more horizontal, if 0 line is drown with 45% axis
+	if (-1 == yDir)
+	{
+		pixelChangeVal = (endX - setX) / (setY - endY);
+	} 
+	else if (1 == yDir)
+	{
+		pixelChangeVal = (endX - setX) / (endY - setY);
+	}
+	else
+	{
+		pixelChangeVal = 0; // no changes needed
+		verHorLine = 1;
+	}
+	//gets information about chipID write sequence
+	chipTransferInfo transInfo;
+	uint8_t csChanges = getSendBytesInfo(setX,endX, &transInfo);
+}
+
+/*
 void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
 {
 	uint8_t startX, startY;
@@ -580,19 +632,29 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 	uint8_t pageInf = endY % YPointsPerPage;
 	uint8_t pageSup = (endX - 1) % YPointsPerPage;
 	uint8_t pagesToChange;
+	uint8_t rowStart = startY % YPointsPerPage;
 	if (pageInf < pageSup)
+	{
 		pagesToChange = pageSup - pageInf + 1;
+	}
 	else
+	{
 		pagesToChange = pageInf - pageSup + 1;
+	}
 	uint8_t colStart = startX % XPointsPerChip;
 	uint8_t dotsX = endX - startX;
 	int8_t dotsY = endY - startY;
+	
 	
 	chipTransferInfo transInfo;
 	
 	
 	stepInfo_st stepInfo;
-	stepInfo.yChangeLen = stepInfo.firstSegLen = dotsX / dotsY;
+	if (dotsY != 0)
+		stepInfo.yChangeLen = stepInfo.firstSegLen = dotsX / dotsY;
+	else
+		stepInfo.yChangeLen = BadValue;
+		
 	if (dotsY > 0)
 		stepInfo.upDown = 1;
 	else if (dotsY < 0)
@@ -605,13 +667,28 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 	uint8_t iteration = 0;
 	uint8_t cschangesNeeded = getSendBytesInfo(startX, endX, &transInfo);
 	uint8_t BytesSent;
+	uint8_t lastSegLen = 0;
+	uint8_t firstSegLen = 0;
+	uint8_t startPage;
+	uint8_t endPage;
+	uint8_t rowsChanges;
 	while (cschangesNeeded--)
 	{
 		if (0 == iteration++)
+		{
 			colToSend = colStart;
+		}
 		else
+		{
 			colToSend = 0;
-		BytesSent = 0;
+		}
+		startPage = startY % YPointsPerPage;
+		rowsChanges = (transInfo.BytesPerChip[transInfo.StartchipID] - lastSegLen) / stepInfo.yChangeLen;
+		if ((transInfo.BytesPerChip[transInfo.StartchipID] - lastSegLen) % stepInfo.yChangeLen)
+		{
+			firstSegLen = stepInfo.yChangeLen - transInfo.BytesPerChip[transInfo.StartchipID] % stepInfo.yChangeLen;
+			rowsChanges++;
+		}
 		selectChipOne(transInfo.StartchipID);
 		for(uint8_t i = 0; i < pagesToChange; i++)
 		{
@@ -622,7 +699,7 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 		deselectChipOne(transInfo.StartchipID++);
 	}
 	
-}
+}*/
 
 /*
 Draws desired rectangle
