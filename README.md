@@ -2,6 +2,7 @@
 Library to interface with TG19264A Display using ATmega32A.
 This is hobby project to create library for interfacing with display given in title.
 Datasheet to used display according to which interface is implemented: https://www.manualslib.com/products/Vatronix-Tg19264a-02wa0-8745270.html
+
 Future plans:
   - finish proposed functions
   - refactor code to be better to read and understand
