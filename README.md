@@ -11,6 +11,7 @@ Future plans:
   - adding new functions if needed
 
 How to use:
-  add include\*.h and src\*.c files to include path.
-  change macros function and displayInit(), waitBusy(), readByte() function (DDRXs & PORTXs)
-  use functions given in include\TG19264A_atmegaDriver.h only
+
+  Add include\*.h and src\*.c files to include path.
+  Change macros function and displayInit(), waitBusy(), readByte() function (DDRXs & PORTXs).
+  Use functions given in include\TG19264A_atmegaDriver.h only.
