@@ -534,10 +534,6 @@ typedef struct
 	uint8_t addCounter; // count how many times additional bit must be written to x or y per pixelPerChange
 } lineParam_st;
 
-const uint8_t testImg[8] = {
-	0x00, 0x7A, 0x4D, 0x4E, 0x4D, 0x4D, 0x7A, 0x0
-};
-
 /************************************************************************/
 /* draws line horizontally                                              */
 /************************************************************************/
@@ -555,24 +551,31 @@ static inline void drawHor(sendParam * param, lineParam_st * step)
 	}
 	else
 	{
-		uint8_t allBytesSent = step->firstSegLen;
+		uint8_t allBytesSent = step->firstSegLen + ( step->addCounter > 0 ? 1 : 0);
 		int8_t rowsCheck = param->offset;
 		uint8_t bytesToSend = param->BytesToSend;
 		uint8_t iteration = 0;
 		uint8_t bytesSent = 0;
 		while (allBytesSent < bytesToSend)
 		{
-			for (int8_t tmpCnt = step->addCounter; allBytesSent < bytesToSend; tmpCnt--)
+			int8_t tmpCnt;
+			if ( 0 == iteration)
+				tmpCnt = step->addCounter - 1;
+			else
+				tmpCnt = step->addCounter;
+			//checks how many bytes send for page
+			for (; allBytesSent < bytesToSend; tmpCnt--)
 			{
 				rowsCheck += step->yDir;
-				if ( (rowsCheck + 1) > 7 && -1 == step->yDir)
+				if ( rowsCheck > 7 && 1 == step->yDir)
 					break;
-				else if ( (rowsCheck - 1) < 0 && 1 == step->yDir)
+				else if (rowsCheck < 0 && -1 == step->yDir)
 					break;
 				if (tmpCnt > 0)
 					allBytesSent++;
 				allBytesSent += step->pixelsPerChange;
 			}
+			
 			if (allBytesSent >= bytesToSend)
 			{
 				step->firstSegLen = bytesToSend - allBytesSent;
@@ -596,15 +599,15 @@ static inline void drawHor(sendParam * param, lineParam_st * step)
 			}
 			setAddress(param->page,param->col);
 			sendData(bytesSent, pageBuff);
-			if (7 <= rowsCheck)
-			{
-				param->offset = rowsCheck = 0;
-				param->page++;
-			}
-			else if (0 >= rowsCheck)
+			if (0 > rowsCheck)
 			{
 				param->offset = rowsCheck = 7;
 				param->page--;
+			}
+			else if (7 < rowsCheck)
+			{
+				param->offset = rowsCheck = 0;
+				param->page++;
 			}
 			param->col += bytesSent;	
 		}
@@ -617,7 +620,7 @@ static inline void drawHor(sendParam * param, lineParam_st * step)
 /************************************************************************/
 static inline void drawVer(sendParam * param, lineParam_st * step)
 {
-	writeDisplay(0,0,7,0,"not implemented yet!");
+	writeDisplay(0,32,7,0,"not implemented yet!");
 }
 
 /************************************************************************/
@@ -682,7 +685,9 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 	lData.firstSegLen = lData.pixelsPerChange;
 	//gets information about chipID write sequence
 	chipTransferInfo transInfo;
+	endX++;
 	uint8_t csChanges = getSendBytesInfo(setX,endX, &transInfo);
+	endX--;
 	sendParam txInfo; //offset used for row number
 	txInfo.offset = setY % YPointsPerPage;
 	txInfo.offset = 0x7 & ~txInfo.offset;
