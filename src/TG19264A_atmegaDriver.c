@@ -529,9 +529,11 @@ typedef struct
 	uint8_t verHor; // if 0 line is more horizontal than vertical, 1 otherwise
 	int8_t yDir; // 1 when A_posY > B_posY, -1 when A_posY < B_posY, 0 when A_posY == B_posY
 	uint8_t firstSegLen; // how many bits to write first
-	uint8_t pixelsPerChange;	// indicates after how many x/y dots, y/x must be inc/dec (needed for lines when endY - setY != 0
-	uint8_t pixelsToSend; // used when verHor == 1 (indicates how many writes verticaly)
-	uint8_t addCounter; // count how many times additional bit must be written to x or y per pixelPerChange
+	//uint8_t pixelsPerChange;	// indicates after how many x/y dots, y/x must be inc/dec (needed for lines when endY - setY != 0
+	int8_t pixelsToChange; //used for counting pixels before change
+	uint8_t rowTypePtr; // used when verHor == 1 (indicates how many writes verticaly) CHANGED!!!! //points which type of row is printing now
+	int8_t rowTypeCount[3]; // 0 left, 1 middle, 2 right
+	uint8_t rowLen[2]; // 0 normal, 1 special
 } lineParam_st;
 
 /************************************************************************/
@@ -551,65 +553,121 @@ static inline void drawHor(sendParam * param, lineParam_st * step)
 	}
 	else
 	{
-		uint8_t allBytesSent = step->firstSegLen + ( step->addCounter > 0 ? 1 : 0);
+		uint8_t allBytesSent = 0;
 		int8_t rowsCheck = param->offset;
 		uint8_t bytesToSend = param->BytesToSend;
-		uint8_t iteration = 0;
+		// = step->rowTypePtr;
 		uint8_t bytesSent = 0;
+		uint8_t BytesChange = 0;
+		uint8_t iteration = 0;
+		uint8_t change = 0; // change from toWrite
 		while (allBytesSent < bytesToSend)
 		{
-			int8_t tmpCnt;
-			if ( 0 == iteration)
-				tmpCnt = step->addCounter - 1;
-			else
-				tmpCnt = step->addCounter;
-			//checks how many bytes send for page
-			for (; allBytesSent < bytesToSend; tmpCnt--)
+			uint8_t tmpChange = 0;
+			uint8_t typePtr = step->rowTypePtr;
+			uint8_t rowLen;
+			//if ( !(PINC & 1 << 7) && step->firstSegLen != 0)
+				//PORTB ^= 1 << 0;
+			if (0 != step->firstSegLen)
 			{
+				allBytesSent =step->firstSegLen;
 				rowsCheck += step->yDir;
-				if ( rowsCheck > 7 && 1 == step->yDir)
-					break;
-				else if (rowsCheck < 0 && -1 == step->yDir)
-					break;
-				if (tmpCnt > 0)
-					allBytesSent++;
-				allBytesSent += step->pixelsPerChange;
+				step->firstSegLen = 0;
+				if (step->rowTypeCount[step->rowTypePtr] == 1)
+					typePtr++;
+				else if (step->rowTypeCount[step->rowTypePtr] > 1)
+				{
+					tmpChange = 1;
+					step->rowTypeCount[step->rowTypePtr]--;
+				}
 			}
-			
+				//allBytesSent += step->rowLen[ 1 == typePtr ? 0 : 1];
+				
+			while (allBytesSent < bytesToSend)
+			{
+				rowLen = step->rowLen [ 1 == typePtr ? 0 : 1];
+				int8_t toWrite = bytesToSend - allBytesSent;
+				change = (toWrite%rowLen != 0);
+				//int8_t tmpRowsCheck = rowsCheck;
+				if (1 == step->yDir)
+				{
+					if (rowsCheck + step->rowTypeCount[typePtr] > 7)
+					{
+						allBytesSent += rowLen * (8 - rowsCheck);
+						rowsCheck += (toWrite/rowLen + change);
+						break;
+					}
+					else
+					{
+						allBytesSent +=	step->rowTypeCount[typePtr] * rowLen;
+						rowsCheck += step->rowTypeCount[typePtr++];
+					}
+				}
+				else // if (-1 == step->ydir)
+				{
+					if (rowsCheck - step->rowTypeCount[typePtr] < 0)
+					{
+						allBytesSent += rowLen * (rowsCheck + 1);
+						rowsCheck -= (toWrite/rowLen) + change;
+						
+						break;
+					}
+					else
+					{
+						allBytesSent +=	step->rowTypeCount[typePtr] * rowLen;
+						rowsCheck -= step->rowTypeCount[typePtr++];
+					}
+				}
+			}
+			if (tmpChange == 1)
+			{
+				step->rowTypeCount[step->rowTypePtr]++;
+				tmpChange = 0;
+			}
 			if (allBytesSent >= bytesToSend)
 			{
-				step->firstSegLen = bytesToSend - allBytesSent;
-				allBytesSent = bytesToSend ;
+				step->firstSegLen = allBytesSent - bytesToSend;
+				allBytesSent = bytesToSend;
+				//if (step->firstSegLen == 0)
+					//_delay_ms(1000);
 			}
-			if ( 0 == iteration++)
-				bytesSent = allBytesSent;
-			else
-				bytesSent = allBytesSent - bytesSent;
+			BytesChange = allBytesSent - bytesSent;
 			setAddress(param->page, param->col);
-			readData(bytesSent, pageBuff);
-			for (uint8_t i = 0; i < bytesSent; i++)
+			readData(BytesChange, pageBuff);
+			for (uint8_t i = 0; i < BytesChange; i++)
 			{
-				if ( (i % (step->pixelsPerChange + (step->addCounter > 0 ? 1 : 0)) == 0) && 0 != i )
-				{
-					param->offset += step->yDir;
-					if (step->addCounter > 0)
-						step->addCounter--;	
-				}
 				pageBuff[i] |= (1 << param->offset);
+				step->pixelsToChange--;
+				if (0 >= step->pixelsToChange)
+				{
+					step->rowTypeCount[step->rowTypePtr]--;
+					if (0 >= step->rowTypeCount[step->rowTypePtr])
+						step->rowTypePtr++;
+					param->offset += step->yDir;
+					
+					step->pixelsToChange = step->rowLen[ 1 == step->rowTypePtr ? 0 : 1 ];
+				}
 			}
 			setAddress(param->page,param->col);
-			sendData(bytesSent, pageBuff);
-			if (0 > rowsCheck)
+			sendData(BytesChange, pageBuff);
+			if (0 > rowsCheck && !(change && bytesToSend == allBytesSent))
 			{
-				param->offset = rowsCheck = 7;
+				param->offset = 7;// + (0 == step->pixelsToChange ? 1 : 0);
+				rowsCheck = param->offset; //?
 				param->page--;
 			}
-			else if (7 < rowsCheck)
+			else if (7 < rowsCheck && !(change && bytesToSend == allBytesSent))
 			{
-				param->offset = rowsCheck = 0;
+				param->offset = 0;//  - (0 == step->pixelsToChange ? 1 : 0);
+				rowsCheck = param->offset;  //?
 				param->page++;
 			}
-			param->col += bytesSent;	
+			//param->col += allBytesSent - bytesSent;
+			bytesSent = allBytesSent;
+			param->col = bytesSent;
+			iteration++;
+			if (step->firstSegLen > step->rowLen[ 1 == step->rowTypePtr ? 0 : 1 ])
+				step->firstSegLen %= step->rowLen[ 1 == step->rowTypePtr ? 0 : 1 ];
 		}
 		param->col = 0;
 	}
@@ -663,7 +721,7 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 	
 	lineParam_st lData;
 	//check direction of writing pages, -1 => form 0 ~ 7 if 1 => from 7 ~ 0, if 0 don't change;
-	lData.yDir = endY - setY ? (endY - setY < 0) ? 1 : -1 : 0; // if endY == setY yDir = 0, else if result negative yDir = -1, else yDir = 1
+	lData.yDir = endY - setY ? (endY - setY < 0) ? 1 : -1 : 0; // if endY == setY yDir = 0, else if result negative yDir = 1, else yDir = -1
 	uint8_t dotsX = endX - setX + 1;
 	int8_t dotsY = endY - setY;
 	if (dotsY < 0)
@@ -671,23 +729,36 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 	dotsY++;
 	if (dotsY > dotsX)
 	{
-		lData.pixelsPerChange = dotsY / dotsX;
-		lData.addCounter = dotsY % dotsX;
+		//lData.pixelsPerChange = dotsY / dotsX;
+		//uint8_t countRows = dotsY % dotsX; //to change
+		//lData.rowTypeCount[1] = 0; //to change
 		lData.verHor = 1;
-		lData.pixelsToSend = dotsY;
+		//lData.pixelsToSend = dotsY;
 	}
 	else
 	{
-		lData.pixelsPerChange = dotsX / dotsY;
-		lData.addCounter = dotsX % dotsY;
+		//lData.pixelsPerChange = ;
+		lData.rowLen[0] = dotsX / dotsY;
+		lData.rowLen[1] = lData.rowLen[0] + 1;
+		lData.rowTypeCount[0] = (dotsX % dotsY) / 2;
+		lData.rowTypeCount[2] = (dotsX % dotsY) / 2;
+		if ( (dotsX % dotsY) % 2 != 0)
+			lData.rowTypeCount[2]++;
+		if (0 != lData.rowTypeCount[0])
+			lData.rowTypePtr = 0;
+		else
+			lData.rowTypePtr = 1;
+		lData.rowTypeCount[1] = dotsY - lData.rowTypeCount[0] - lData.rowTypeCount[2];
 		lData.verHor = 0;
 	}
-	lData.firstSegLen = lData.pixelsPerChange;
+	//if (lData.rowTypeCount[1] == 30 && lData.rowTypeCount[0] == 3 && lData.rowTypeCount[2] == 4 && lData.rowLen[0] == 5 && lData.rowLen[1] == 6) return; //DEBUG
+	lData.firstSegLen = 1 == lData.rowTypePtr ? lData.rowLen[0] : lData.rowLen[1]; //if special rows, write special pixels length else normal length
+	lData.pixelsToChange = lData.firstSegLen;
 	//gets information about chipID write sequence
 	chipTransferInfo transInfo;
 	endX++;
 	uint8_t csChanges = getSendBytesInfo(setX,endX, &transInfo);
-	endX--;
+	endX--; //refactor
 	sendParam txInfo; //offset used for row number
 	txInfo.offset = setY % YPointsPerPage;
 	txInfo.offset = 0x7 & ~txInfo.offset;
