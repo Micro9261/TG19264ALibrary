@@ -303,7 +303,7 @@ static void deselectChipOne(uint8_t ID)
 }
 
 /************************************************************************/
-/* function to create mask with bits written from LSB                   */
+/* function to create mask with bits written from MSB                   */
 /************************************************************************/
 static inline uint8_t makeMask(uint8_t bits)
 {
@@ -314,7 +314,7 @@ static inline uint8_t makeMask(uint8_t bits)
 }
 
 /************************************************************************/
-/* function to create mask with bits written from MSB                   */
+/* function to create mask with bits written from LSB                   */
 /************************************************************************/
 static inline uint8_t makeReverseMask(uint8_t bits)
 {
@@ -678,7 +678,79 @@ static inline void drawHor(sendParam * param, lineParam_st * step)
 /************************************************************************/
 static inline void drawVer(sendParam * param, lineParam_st * step)
 {
-	writeDisplay(0,32,7,0,"not implemented yet!");
+	if (1 == param->BytesToSend) //only true when Ay == By
+	{
+		while (0 != step->rowLen[0])
+		{
+			uint8_t data;
+			setAddress(param->page, param->col);
+			readData(1, &data);
+			while (param->offset >= 0 && param->offset <= 7)
+			{
+				data |= (1 << param->offset);
+				param->offset += step->yDir;
+				step->rowLen[0]--;
+				if (0 == step->rowLen[0])
+					break;
+			}
+			setAddress(param->page,param->col);
+			sendByte(data);
+			if (param->offset < 0)
+			{
+				param->offset = 7;
+				param->page--;
+			}
+			else if (param->offset > 7)
+			{
+				param->offset = 0;
+				param->page++;
+			}
+		}
+	}
+	else
+	{
+		uint8_t rowLen = step->rowLen[ 1 == step->rowTypePtr ? 0 : 1];
+		uint8_t bytesSent = 0;
+		while (bytesSent < param->BytesToSend)
+		{
+			uint8_t data;
+			setAddress(param->page, param->col);
+			readData(1,&data);
+			while(param->offset >= 0 && param->offset <= 7 && rowLen != 0)
+			{
+				data |= (1 << param->offset);
+				param->offset += step->yDir;
+				rowLen--;
+			}
+			setAddress(param->page, param->col);
+			sendByte(data);
+			if (0 == rowLen)
+			{
+				step->rowTypeCount[step->rowTypePtr]--;
+				bytesSent++;
+				param->col++;
+				if (0 == step->rowTypeCount[step->rowTypePtr])
+				{
+					step->rowTypePtr++;
+					if (step->rowTypePtr > 2)
+						break;
+				}
+				if (step->rowTypeCount[step->rowTypePtr] > 0)
+					rowLen = step->rowLen[1 == step->rowTypePtr ? 0 : 1];
+			}
+			if (param->offset < 0)
+			{
+				param->offset = 7;
+				param->page--;
+			}
+			else if (param->offset > 7)
+			{
+				param->offset = 0;
+				param->page++;
+			}
+		}
+		param->col = 0;
+	}
 }
 
 /************************************************************************/
@@ -729,11 +801,17 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 	dotsY++;
 	if (dotsY > dotsX)
 	{
-		//lData.pixelsPerChange = dotsY / dotsX;
-		//uint8_t countRows = dotsY % dotsX; //to change
-		//lData.rowTypeCount[1] = 0; //to change
+		lData.rowLen[0] = dotsY / dotsX;
+		lData.rowLen[1] = lData.rowLen[0] + 1;
+		lData.rowTypeCount[0] = lData.rowTypeCount[2] = (dotsY % dotsX) / 2;
+		if ( (dotsY % dotsX) % 2 != 0)
+			lData.rowTypeCount[2]++;
+		if (0 != lData.rowTypeCount[0])
+			lData.rowTypePtr = 0;
+		else
+			lData.rowTypePtr = 1;
+		lData.rowTypeCount[1] = dotsX - lData.rowTypeCount[0] - lData.rowTypeCount[2];
 		lData.verHor = 1;
-		//lData.pixelsToSend = dotsY;
 	}
 	else
 	{
