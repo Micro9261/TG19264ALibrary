@@ -26,6 +26,11 @@ PointA(posX,posY) and ends at PointB(posX,PosY)							*/
 void clearDisplay(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB);
 
 /************************************************************************/
+/* Clears full display                                                  */
+/************************************************************************/
+void clearDisplayFull(void);
+
+/************************************************************************/
 /* Draws image from buff pointer. Starts at (posX,posY), prints sizeX x sizeY
 characters                                                     */
 /************************************************************************/

@@ -355,7 +355,8 @@ static inline void clearMaskPage(const sendParam * param, uint8_t invert)
 }
 
 /************************************************************************/
-/*Clears display in selected rectangle area that starts at (posX,posY)   */
+/*Clears display in selected rectangle area that starts at
+PointA(posX,posY) and ends at PointB(posX,PosY)						   */
 /************************************************************************/
 void clearDisplay(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
 {
@@ -422,6 +423,32 @@ void clearDisplay(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, ui
 			}
 		}
 		deselectChipOne(TransInfo.StartchipID++);
+	}
+}
+
+// used by clearDisplayFull
+static inline void sendPattern(uint8_t size, uint8_t pattern)
+{
+	for (uint8_t i = 0; i < size; i++)
+	sendByte(pattern);
+}
+
+
+/************************************************************************/
+/* Clears full display                                                  */
+/************************************************************************/
+void clearDisplayFull(void)
+{
+	uint8_t chipID = 0;
+	while (chipID < 3)
+	{
+		selectChipOne(chipID);
+		for (uint8_t i=0; i < 8; i++)
+		{
+			setAddress(i,0);
+			sendPattern(0x0,XPointsPerChip);
+		}
+		deselectChipOne(chipID++);
 	}
 }
 
