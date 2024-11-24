@@ -20,9 +20,10 @@
 void InitDisplay(void);
 
 /************************************************************************/
-/*Clears display in selected rectangle area that starts at (posX,posY)   */
+/*Clears display in selected rectangle area that starts at 
+PointA(posX,posY) and ends at PointB(posX,PosY)							*/
 /************************************************************************/
-void clearDisplay(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY);
+void clearDisplay(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB);
 
 /************************************************************************/
 /* Draws image from buff pointer. Starts at (posX,posY), prints sizeX x sizeY

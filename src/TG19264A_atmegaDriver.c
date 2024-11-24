@@ -357,20 +357,38 @@ static inline void clearMaskPage(const sendParam * param, uint8_t invert)
 /************************************************************************/
 /*Clears display in selected rectangle area that starts at (posX,posY)   */
 /************************************************************************/
-void clearDisplay(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY)
+void clearDisplay(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
 {
-	if (posX > XPoints - 1 || posY > YPoints - 1)
-		return;
-	uint8_t colStart = posX%XPointsPerChip;
-	uint8_t pageSup = (posY + sizeY - 1)/YPointsPerPage;
-	uint8_t pageInf = posY/YPointsPerPage;
-	uint8_t rowsSup = (posY + sizeY)%YPointsPerPage;
-	uint8_t rowsInf = posY%YPointsPerPage;
+	if (posXpointA >= XPoints || posXpointB >= XPoints
+	|| posYpointA >= YPoints || posYpointB >= YPoints)
+	return;
+	
+	uint8_t setX, setY; //coordinates of start point
+	uint8_t endX, endY; //coordinates of end point
+	if (posXpointA > posXpointB) // sets coordinates for writing to display from left to right;
+	{
+		setX = posXpointB;
+		setY = posYpointB;
+		endX = posXpointA;
+		endY = posYpointA;
+	}
+	else
+	{
+		setX = posXpointA;
+		setY = posYpointA;
+		endX = posXpointB;
+		endY = posYpointB;
+	}
+	uint8_t colStart = setX%XPointsPerChip;
+	uint8_t pageSup = endY/YPointsPerPage;
+	uint8_t pageInf = setY/YPointsPerPage;
+	uint8_t rowsSup = (endY - 1)%YPointsPerPage;
+	uint8_t rowsInf = setY%YPointsPerPage;
 	uint8_t pagesToChange = pageSup - pageInf + 1;
 	pageSup = 0x07 & ~pageSup;		//change direction of pages from 7->0, to 0->7
 	
 	chipTransferInfo TransInfo;
-	uint8_t csChangesNeeded = getSendBytesInfo(posX,posX+sizeX,&TransInfo);
+	uint8_t csChangesNeeded = getSendBytesInfo(setX,endX + 1,&TransInfo);
 	uint8_t colToSend;
 	uint8_t iteration = 0;
 	sendParam TxInfo;
