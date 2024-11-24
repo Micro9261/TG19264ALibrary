@@ -4,11 +4,11 @@ This is hobby project to create library for interfacing with display given in ti
 Datasheet to used display according to which interface is implemented: https://www.manualslib.com/products/Vatronix-Tg19264a-02wa0-8745270.html
 
 Future plans:
-  - finish proposed functions
-  - refactor code to be better to read and understand
+  - finish proposed functions (done)
+  - refactor code to be better to read and understand (in progress)
   - use of preprocessor for choosing between using simple AVR(tiny/mega) I/O interface or function declared by user. (e.g. outputFun(uint8_t Byte) for sending 1 Byte to display)
     (This future would made library more general, not olny for AVR or specificly Atmega32A)
-  - adding new functions if needed
+  - adding new functions if needed (reverse screen for given area [after refactor] )
 
 How to use:
 
