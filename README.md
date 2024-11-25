@@ -7,11 +7,11 @@ Future plans:
   - finish proposed functions (done)
   - refactor code to be better to read and understand (in progress)
   - use of preprocessor for choosing between using simple AVR(tiny/mega) I/O interface or function declared by user. (e.g. outputFun(uint8_t Byte) for sending 1 Byte to display)
-    (This future would made library more general, not olny for AVR or specificly Atmega32A)
+    (This future would made library more general, not only for AVR or specificly Atmega32A)
   - adding new functions if needed (reverse screen for given area [after refactor] )
 
 How to use:
 
   Add include\*.h and src\*.c files to include path.
-  Change macros function and displayInit(), waitBusy(), readByte() function (DDRXs & PORTXs).
+  Change configuration section and Delay configuration accordingly to instruction given in source file 
   Use functions given in include\TG19264A_atmegaDriver.h only.
