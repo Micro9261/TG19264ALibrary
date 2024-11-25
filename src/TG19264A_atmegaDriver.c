@@ -5,39 +5,135 @@
  *  Author: Micro9261
  */ 
 
-#define F_CPU 16000000UL
-
 #include "..\include\TG19264A_atmegaDriver.h"
 #include "..\include\fonts.h"
 #include <inttypes.h>
+
+//Configuration section
+/*
+Connection between display and MCU is defined by:
+DATA - 8 bit bidirectional port (all pins in 1 port), D0 ~ D7 in order: Pin0 -> D0, Pin1 -> D1 etc
+RS_PIN - 1 bit output port 
+RW_PIN - 1 bit output port 
+E_PIN - 1 bit output port
+CS1_PIN - 1 bit output port
+CS2_PIN - 1 bit output port
+CS3_PIN  - 1 bit output port
+RES_PIN - 1 bit output port
+*/
+
+#ifdef ATmega
+/*
+Section with configuration for ATmega MCU 
+(suitable for all MCUs which requires only Port & Direction Registers to operate)
+X_PORT <- defines Port Register for given pin/s
+X_DDR <- defines Data Direction Register for given pin/s
+X_NUM <- defines pin number in 1 bit operations
+X_READ <- defines Read Port Register for given pin/s (used by RS and DATA)
+OUTPUT <- value to set port as output
+INPUT <- value to set port as input
+OUTPUT_8BIT <-value to set 8 bits as output (used by DATA)
+PULLUP_8BIT <- value to set 8 bits as pullup [input] (used by DATA)
+INPUT_8BIT <-value to set 8 bits as input (used by DATA)
+*/
+
+//Include suitable header file with MCU register here
 #include <xc.h>
+
+//Data Port
+#define DATA_PORT	PORTA
+#define DATA_DDR	DDRA
+#define DATA_READ	PINA
+
+//RS_PIN
+#define RS_PIN_PORT	PORTC
+#define RS_PIN_DDR	DDRC
+#define RS_PIN_NUM	4
+#define RS_PIN_READ PINC
+
+//RW_PIN
+#define RW_PIN_PORT	PORTC
+#define RW_PIN_DDR	DDRC
+#define RW_PIN_NUM	5
+
+//E_PIN
+#define E_PIN_PORT	PORTC
+#define E_PIN_DDR	DDRC
+#define E_PIN_NUM	3
+
+//CS1_PIN
+#define CS1_PIN_PORT  PORTD
+#define CS1_PIN_DDR	  DDRD
+#define CS1_PIN_NUM	  6
+
+//CS2_PIN
+#define CS2_PIN_PORT  PORTC
+#define CS2_PIN_DDR	  DDRC
+#define CS2_PIN_NUM	  6
+
+//CS3_PIN
+#define CS3_PIN_PORT  PORTC
+#define CS3_PIN_DDR   DDRC
+#define CS3_PIN_NUM   7
+
+//RES_PIN
+#define RES_PIN_PORT  PORTC
+#define RES_PIN_DDR   DDRC
+#define RES_PIN_NUM   2
+
+//Pin states
+#define OUTPUT 1
+#define INPUT 0
+
+//DATA states
+#define OUTPUT_8BIT 0xFF
+#define INPUT_8BIT 0x0
+#define PULLUP_8BIT 0xFF
+
+#endif // ATmega
+
+/*
+Delay configuration:
+Add suitable header file with delays function and define clock freq if needed
+*/
+#define F_CPU 16000000UL
 #include <util/delay.h>
+
+
+#define DELAY_MS(x) (_delay_ms(x))
+#define DELAY_US(x) (_delay_us(x))
+
+
 
 #define BadValue 128
 #define true 1
 #define false 0
+#define HIGH 1
+#define LOW 0
+#define BUSY_FLAG 7
 
 #define XPoints 192
 #define XPointsPerChip 64
 #define YPoints 64
 #define YPointsPerPage 8
 
-#define strobeEnable (PORTC ^= 1 << 3); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop")
-#define strobeEnableFast (PORTC ^= 1 << 3); asm("nop"); asm("nop")
-#define strobeReset (PORTC ^= 1 << 2)
 
-#define cs1deselect (PORTD |= 1 << 6)
-#define cs1select (PORTD &= ~(1 << 6))
-#define cs2deselect (PORTC |= 1 << 6)
-#define cs2select (PORTC &= ~(1 << 6))
-#define cs3deselect (PORTC |= 1 << 7)
-#define cs3select (PORTC &= ~(1 << 7))
+#define strobeEnable (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop")
+#define strobeEnableFast (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); asm("nop"); asm("nop")
+#define strobeReset (RES_PIN_PORT ^= HIGH <<  RES_PIN_NUM)
 
-#define RSreadState ( (1 << 4) & PINC)
-#define RSdata (PORTC |= 1 << 4)
-#define RScommand (PORTC &= ~(1 << 4))
-#define RWread (PORTC |= 1 << 5)
-#define RWwrite (PORTC &= ~(1 << 5))
+#define cs1deselect (CS1_PIN_PORT |= HIGH << CS1_PIN_NUM)
+#define cs1select (CS1_PIN_PORT &= ~(HIGH << CS1_PIN_NUM))
+#define cs2deselect (CS2_PIN_PORT |= HIGH << CS2_PIN_NUM)
+#define cs2select (CS2_PIN_PORT &= ~(HIGH << CS2_PIN_NUM))
+#define cs3deselect (CS3_PIN_PORT |= HIGH << CS3_PIN_NUM)
+#define cs3select (CS3_PIN_PORT &= ~(HIGH << CS3_PIN_NUM))
+
+#define RSreadState ( (HIGH << RS_PIN_NUM) & RS_PIN_READ)
+#define RSdata (RS_PIN_PORT |= HIGH << RS_PIN_NUM)
+#define RScommand (RS_PIN_PORT &= ~(HIGH << RS_PIN_NUM))
+#define RWread (RW_PIN_PORT |= HIGH << RW_PIN_NUM)
+#define RWwrite (RW_PIN_PORT &= ~(HIGH << RW_PIN_NUM))
 
 uint8_t pageBuff[64]; //for library use only. Internal buffer!
 
@@ -81,21 +177,21 @@ static uint8_t getByte(void)
 {
 	uint8_t data;
 	strobeEnable;
-	data = PINA;
+	data = DATA_READ;
 	strobeEnableFast;
 	return data;
 }
 
 static void waitBusy(void)
 {
-	DDRA = 0x00;
-	PORTA = 0xFF;
+	DATA_DDR = INPUT_8BIT;
+	DATA_PORT = PULLUP_8BIT;
 	RWread;
 	uint8_t RSstate = RSreadState;
 	RScommand;
-	while (getByte() & (1 << 7));
-	PORTA = 0x00;
-	DDRA = 0xFF;
+	while (getByte() & (HIGH << BUSY_FLAG));
+	DATA_PORT = LOW;
+	DATA_DDR = OUTPUT_8BIT;
 	RWwrite;
 	if (RSstate)
 		RSdata;
@@ -106,7 +202,7 @@ static void waitBusy(void)
 static void sendByte(uint8_t byte)
 {
 	strobeEnableFast;
-	PORTA = byte;
+	DATA_PORT = byte;
 	strobeEnableFast;
 	waitBusy();
 }
@@ -148,21 +244,21 @@ sum for simultaneously turning few segments*/
 static void readData(uint8_t size, uint8_t * buff)
 {
 	RWread;
-	DDRA = 0x00;
-	PORTA = 0xFF;
+	DATA_DDR = INPUT_8BIT;
+	DATA_PORT = PULLUP_8BIT;
 	RSdata;
 	getByte();
 	RScommand;
-	while (getByte() & (1 << 7));
+	while (getByte() & (HIGH << BUSY_FLAG));
 	for (uint8_t i = 0; i < size; i++)
 	{
 		RSdata;
 		*buff++ = getByte();
 		RScommand;
-		while (getByte() & (1 << 7));
+		while (getByte() & (HIGH << BUSY_FLAG));
 	}
-	PORTA = 0x00;
-	DDRA = 0xFF;
+	DATA_PORT = LOW;
+	DATA_DDR = OUTPUT_8BIT;
 	RWwrite;
 	RSdata;
 }
@@ -185,16 +281,36 @@ Initializes ports for work with display
 */
 void InitDisplay(void)
 {
-	DDRA = 0xFF;
-	PORTA = 0x00;
-	DDRC |= 0xFC;
-	PORTC &= ~(0xFC);
-	DDRD |= 1 << 6;
-	PORTD &= (1 << 6);
+	//initialize MCU interface
+	DATA_DDR = OUTPUT_8BIT;
+	DATA_PORT = LOW;
+	//RS config
+	RS_PIN_DDR |= OUTPUT << RS_PIN_NUM;
+	RS_PIN_PORT &= ~(HIGH << RS_PIN_NUM);
+	//RW config
+	RW_PIN_DDR |= OUTPUT << RW_PIN_NUM;
+	RW_PIN_PORT &= ~(HIGH << RW_PIN_NUM);
+	//Enable config
+	E_PIN_DDR |= OUTPUT << E_PIN_NUM;
+	E_PIN_PORT &= ~(HIGH << E_PIN_NUM);
+	//CS1 config
+	CS1_PIN_DDR |= OUTPUT << CS1_PIN_NUM;
+	CS1_PIN_PORT &= ~(HIGH << CS1_PIN_NUM);
+	//CS2 config
+	CS2_PIN_DDR |= OUTPUT << CS2_PIN_NUM;
+	CS2_PIN_PORT &= ~(HIGH << CS2_PIN_NUM);
+	//CS3 config
+	CS3_PIN_DDR |= OUTPUT << CS3_PIN_NUM;
+	CS3_PIN_PORT &= ~(HIGH << CS3_PIN_NUM);
+	//RES config
+	RES_PIN_DDR |= OUTPUT << RES_PIN_NUM;
+	RES_PIN_PORT &= ~(HIGH << RES_PIN_NUM);
+	
+	//initialize display
 	strobeReset;
 	RSdata;
 	RWwrite;
-	_delay_ms(35);
+	DELAY_MS(35);
 	turnOnDisplay(0x7);
 	setStartLine(0,0x7);
 	cs1deselect;
@@ -222,16 +338,16 @@ void turnOffDisplay(uint8_t chipID)
 
 uint8_t getStatDisplay(uint8_t chipID)
 {
-	DDRA = 0x00;
-	PORTA = 0xFF;
+	DATA_DDR = INPUT_8BIT;
+	DATA_PORT = PULLUP_8BIT;
 	RWread;
 	uint8_t RSstate = RSreadState;
 	RScommand;
 	selectChip(chipID);
 	uint8_t res = getByte();
 	deselectChip(chipID);
-	PORTA = 0x00;
-	DDRA = 0xFF;
+	DATA_PORT = LOW;
+	DATA_DDR = OUTPUT_8BIT;
 	RWwrite;
 	if (RSstate)
 		RSdata;
@@ -430,7 +546,7 @@ void clearDisplay(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, ui
 static inline void sendPattern(uint8_t size, uint8_t pattern)
 {
 	for (uint8_t i = 0; i < size; i++)
-	sendByte(pattern);
+		sendByte(pattern);
 }
 
 
@@ -446,7 +562,7 @@ void clearDisplayFull(void)
 		for (uint8_t i=0; i < 8; i++)
 		{
 			setAddress(i,0);
-			sendPattern(0x0,XPointsPerChip);
+			sendPattern(XPointsPerChip, 0x0);
 		}
 		deselectChipOne(chipID++);
 	}
@@ -951,7 +1067,7 @@ void TestDisplay(void)
 		testfillPage(i,0xFF,rightSeg);
 	}
 	setStartLine(0,0x7);
-	_delay_ms(1000);
+	DELAY_MS(1000);
 	for (uint8_t i =0; i < 8; i++)
 	{
 		selectChipOne(0);
@@ -963,7 +1079,7 @@ void TestDisplay(void)
 		sendData(64,pageBuff);
 		deselectChipOne(2);
 	}
-	_delay_ms(1000);
+	DELAY_MS(1000);
 	selectChipOne(0);
 	for (uint8_t i =0; i < 8; i++)
 	{
@@ -975,10 +1091,10 @@ void TestDisplay(void)
 		sendData(32,pageBuff);
 	}
 	deselectChipOne(0);
-	_delay_ms(1000);
+	DELAY_MS(1000);
 	turnOffDisplay(midSeg);
 	clearDisplay(2,2,188,60);
-	_delay_ms(1000);
+	DELAY_MS(1000);
 	reverseDisplayCol();
 	turnOnDisplay(midSeg);
 }
