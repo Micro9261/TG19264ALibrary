@@ -13,5 +13,5 @@ Future plans:
 How to use:
 
   Add include\*.h and src\*.c files to include path.
-  Change configuration section and Delay configuration accordingly to instruction given in source file.
-  Use functions given in include\TG19264A_atmegaDriver.h only.
+  Change configuration section and Delay configuration accordingly to instruction given in TG19264Config.h file.
+  Use functions given in include\TG19264ALib.h only.
