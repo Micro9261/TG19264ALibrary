@@ -91,4 +91,11 @@ Add suitable header file with delays function and define clock freq if needed
 #define F_CPU 16000000UL
 #include <util/delay.h>
 
+#define DELAY_MS(x) (_delay_ms(x))
+#define DELAY_US(x) (_delay_us(x))
+//function to make 200ns delay for read operation (according to data sheet)
+#define DELAY_200NS asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop")
+//can't be nothing (interface works with 40 ns min (checked) )
+#define DELAY_STROBE_FAST asm("nop")
+
 #endif //__TG19264A_CONFIG__

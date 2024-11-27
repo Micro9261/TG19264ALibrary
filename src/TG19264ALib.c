@@ -10,9 +10,6 @@
 #include "TG19264ALib.h"
 #include "TG19264Config.h"
 
-#define DELAY_MS(x) (_delay_ms(x))
-#define DELAY_US(x) (_delay_us(x))
-
 #define BadValue 128
 #define true 1
 #define false 0
@@ -26,8 +23,8 @@
 #define YPointsPerPage 8
 
 
-#define strobeEnable (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop")
-#define strobeEnableFast (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); asm("nop"); asm("nop")
+#define strobeEnable (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); DELAY_200NS
+#define strobeEnableFast (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); DELAY_STROBE_FAST
 #define strobeReset (RES_PIN_PORT ^= HIGH <<  RES_PIN_NUM)
 
 #define cs1deselect (CS1_PIN_PORT |= HIGH << CS1_PIN_NUM)
@@ -187,7 +184,7 @@ static void setStartLine(uint8_t start, uint8_t chipID)
 /*
 Initializes ports for work with display
 */
-void InitDisplay(void)
+void TG_init(void)
 {
 	//initialize MCU interface
 	DATA_DDR = OUTPUT_8BIT;
@@ -219,14 +216,14 @@ void InitDisplay(void)
 	RSdata;
 	RWwrite;
 	DELAY_MS(35);
-	turnOnDisplay(0x7);
+	TG_trun_on(0x7);
 	setStartLine(0,0x7);
 	cs1deselect;
 	cs2deselect;
 	cs3deselect;
 }
 
-void turnOnDisplay(uint8_t chipID)
+void TG_trun_on(uint8_t chipID)
 {
 	RScommand;
 	selectChip(chipID);
@@ -235,7 +232,7 @@ void turnOnDisplay(uint8_t chipID)
 	RSdata;
 }
 
-void turnOffDisplay(uint8_t chipID)
+void TG_turn_off(uint8_t chipID)
 {
 	RScommand;
 	selectChip(chipID);
@@ -244,7 +241,7 @@ void turnOffDisplay(uint8_t chipID)
 	RSdata;
 }
 
-uint8_t getStatDisplay(uint8_t chipID)
+uint8_t TG_get_stat(uint8_t chipID)
 {
 	DATA_DDR = INPUT_8BIT;
 	DATA_PORT = PULLUP_8BIT;
@@ -382,7 +379,7 @@ static inline void clearMaskPage(const sendParam * param, uint8_t invert)
 /*Clears display in selected rectangle area that starts at
 PointA(posX,posY) and ends at PointB(posX,PosY)						   */
 /************************************************************************/
-void clearDisplay(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
+void TG_clear_area(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
 {
 	if (posXpointA >= XPoints || posXpointB >= XPoints
 	|| posYpointA >= YPoints || posYpointB >= YPoints)
@@ -461,7 +458,7 @@ static inline void sendPattern(uint8_t size, uint8_t pattern)
 /************************************************************************/
 /* Clears full display                                                  */
 /************************************************************************/
-void clearDisplayFull(void)
+void TG_clear_full(void)
 {
 	uint8_t chipID = 0;
 	while (chipID < 3)
@@ -479,7 +476,7 @@ void clearDisplayFull(void)
 /************************************************************************/
 /* Changes states for all pixels using XOR operation                     */
 /************************************************************************/
-void reverseDisplayCol(void)
+void TG_reverse_all(void)
 {
 	for (uint8_t chip = 0; chip < 3; chip++)
 	{
@@ -540,7 +537,7 @@ static inline void DrawPage(const sendParam * param, const uint8_t * imageBefore
 /*
 Prints image from buff in given X,Y coordinates with defined sizeX x sizeY image size
 */
-void drawImage(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY, const uint8_t * buff)
+void TG_image(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY, const uint8_t * buff)
 {
 	if (posX + sizeX > XPoints || posY + sizeY> YPoints)
 		return;
@@ -836,7 +833,7 @@ static inline void drawLineChip(sendParam * param, lineParam_st * ldata )
 /*
 Draws line from pointA to pointB
 */
-void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
+void TG_line(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
 {
 	//if values above max value, don't execute cmd
 	if (posXpointA >= XPoints || posXpointB >= XPoints
@@ -925,19 +922,19 @@ void drawLine(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_
 /*
 Draws desired rectangle
 */
-void drawRectangle(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY)
+void TG_rectangle(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY)
 {
-	drawLine(posX, posX, posX, posY+sizeY);
-	drawLine(posX, posY+sizeY, posX +sizeX, posY+sizeY);
-	drawLine(posX+sizeX, posY+sizeY, posX+sizeX, posY);
-	drawLine(posX+sizeX, posY, posX, posY);
+	TG_line(posX, posX, posX, posY+sizeY);
+	TG_line(posX, posY+sizeY, posX +sizeX, posY+sizeY);
+	TG_line(posX+sizeX, posY+sizeY, posX+sizeX, posY);
+	TG_line(posX+sizeX, posY, posX, posY);
 }
 
 
 /************************************************************************/
 /* Writes text from (posX,posY) with given height of letters  and space */
 /************************************************************************/
-void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, uint8_t space, const char * text)
+void TG_printf(uint8_t posX, uint8_t posY, uint8_t height, uint8_t space, const char * text)
 {
 	const uint8_t (*ptr)[5];
 	uint8_t charWidth = 0;
@@ -957,7 +954,7 @@ void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, uint8_t space, con
 			posX = 0;
 			posY -= charHight;
 		}
-		drawImage(posX,posY,charWidth,charHight,ptr[(uint8_t)*text]);
+		TG_image(posX,posY,charWidth,charHight,ptr[(uint8_t)*text]);
 		posX += charWidth + space;
 		text++;
 	}
@@ -966,7 +963,7 @@ void writeDisplay(uint8_t posX, uint8_t posY, uint8_t height, uint8_t space, con
 /*
 Prints test data on display
 */
-void TestDisplay(void)
+void TG_test(void)
 {
 	for(int i =0; i < 8; i++)
 	{
@@ -1000,9 +997,9 @@ void TestDisplay(void)
 	}
 	deselectChipOne(0);
 	DELAY_MS(1000);
-	turnOffDisplay(midSeg);
-	clearDisplay(2,2,188,60);
+	TG_turn_off(midSeg);
+	TG_clear_area(2,2,188,60);
 	DELAY_MS(1000);
-	reverseDisplayCol();
-	turnOnDisplay(midSeg);
+	TG_reverse_all();
+	TG_trun_on(midSeg);
 }
