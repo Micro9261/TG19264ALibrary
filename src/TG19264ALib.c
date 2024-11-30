@@ -23,31 +23,31 @@
 #define YPointsPerPage 8
 
 
-#define strobeEnable (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); DELAY_200NS
-#define strobeEnableFast (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); DELAY_STROBE_FAST
-#define strobeReset (RES_PIN_PORT ^= HIGH <<  RES_PIN_NUM)
+#define strobe_enable (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); DELAY_200NS
+#define strobe_enable_fast (E_PIN_PORT ^= HIGH <<  E_PIN_NUM); DELAY_STROBE_FAST
+#define strobe_reset (RES_PIN_PORT ^= HIGH <<  RES_PIN_NUM)
 
-#define cs1deselect (CS1_PIN_PORT |= HIGH << CS1_PIN_NUM)
-#define cs1select (CS1_PIN_PORT &= ~(HIGH << CS1_PIN_NUM))
-#define cs2deselect (CS2_PIN_PORT |= HIGH << CS2_PIN_NUM)
-#define cs2select (CS2_PIN_PORT &= ~(HIGH << CS2_PIN_NUM))
-#define cs3deselect (CS3_PIN_PORT |= HIGH << CS3_PIN_NUM)
-#define cs3select (CS3_PIN_PORT &= ~(HIGH << CS3_PIN_NUM))
+#define cs1_deselect (CS1_PIN_PORT |= HIGH << CS1_PIN_NUM)
+#define cs1_select (CS1_PIN_PORT &= ~(HIGH << CS1_PIN_NUM))
+#define cs2_deselect (CS2_PIN_PORT |= HIGH << CS2_PIN_NUM)
+#define cs2_select (CS2_PIN_PORT &= ~(HIGH << CS2_PIN_NUM))
+#define cs3_deselect (CS3_PIN_PORT |= HIGH << CS3_PIN_NUM)
+#define cs3_select (CS3_PIN_PORT &= ~(HIGH << CS3_PIN_NUM))
 
-#define RSreadState ( (HIGH << RS_PIN_NUM) & RS_PIN_READ)
-#define RSdata (RS_PIN_PORT |= HIGH << RS_PIN_NUM)
-#define RScommand (RS_PIN_PORT &= ~(HIGH << RS_PIN_NUM))
-#define RWread (RW_PIN_PORT |= HIGH << RW_PIN_NUM)
-#define RWwrite (RW_PIN_PORT &= ~(HIGH << RW_PIN_NUM))
+#define read_rs ( (HIGH << RS_PIN_NUM) & RS_PIN_READ)
+#define set_type_data (RS_PIN_PORT |= HIGH << RS_PIN_NUM)
+#define set_type_cmd (RS_PIN_PORT &= ~(HIGH << RS_PIN_NUM))
+#define set_state_read (RW_PIN_PORT |= HIGH << RW_PIN_NUM)
+#define set_state_write (RW_PIN_PORT &= ~(HIGH << RW_PIN_NUM))
 
-uint8_t pageBuff[64]; //for library use only. Internal buffer!
+static uint8_t page_buff[64]; //for library use only. Internal buffer!
 
 //struct for acquiring information about bytes to send per chipId and chipID for start
 typedef struct 
 {
-	uint8_t BytesPerChip[3];
-	uint8_t StartchipID;
-} chipTransferInfo;
+	uint8_t bytes_per_chip[3];
+	uint8_t start_id;
+} tx_info_st;
 
 //Gives needed information to functions about starting point, offset for mask and bytes to send;
 typedef struct
@@ -55,129 +55,133 @@ typedef struct
 	uint8_t page;
 	uint8_t col;
 	int8_t offset;
-	uint8_t BytesToSend;
-} sendParam;
+	uint8_t bytes_to_send;
+} tx_param_st;
 
-static void selectChip(uint8_t ID)
+//used for selecting one chip 
+static void select_chip(uint8_t ID)
 {
-	if (leftSeg & ID)
-		cs1select;
-	if (midSeg & ID)
-		cs2select;
-	if (rightSeg & ID)
-		cs3select;
+	if (TG_left_disp & ID)
+		cs1_select;
+	if (TG_mid_disp & ID)
+		cs2_select;
+	if (TG_right_disp & ID)
+		cs3_select;
 }
 
-static void deselectChip(uint8_t ID)
+//used for deselecting one chip
+static void deselect_chip(uint8_t ID)
 {
-	if (leftSeg & ID)
-		cs1deselect;
-	if (midSeg & ID)
-		cs2deselect;
-	if (rightSeg & ID)
-		cs3deselect;
+	if (TG_left_disp & ID)
+		cs1_deselect;
+	if (TG_mid_disp & ID)
+		cs2_deselect;
+	if (TG_right_disp & ID)
+		cs3_deselect;
 }
 
-static uint8_t getByte(void)
+//reads byte from display
+static uint8_t get_byte(void)
 {
 	uint8_t data;
-	strobeEnable;
+	strobe_enable;
 	data = DATA_READ;
-	strobeEnableFast;
+	strobe_enable_fast;
 	return data;
 }
 
-static void waitBusy(void)
+//wait till display ready to write
+static void wait_busy(void)
 {
 	DATA_DDR = INPUT_8BIT;
 	DATA_PORT = PULLUP_8BIT;
-	RWread;
-	uint8_t RSstate = RSreadState;
-	RScommand;
-	while (getByte() & (HIGH << BUSY_FLAG));
+	set_state_read;
+	uint8_t rs_state = read_rs;
+	set_type_cmd;
+	while (get_byte() & (HIGH << BUSY_FLAG));
 	DATA_PORT = LOW;
 	DATA_DDR = OUTPUT_8BIT;
-	RWwrite;
-	if (RSstate)
-		RSdata;
+	set_state_write;
+	if (rs_state)
+		set_type_data;
 	else
-		RScommand;
+		set_type_cmd;
 }
 
-static void sendByte(uint8_t byte)
+static void send_byte(uint8_t byte)
 {
-	strobeEnableFast;
+	strobe_enable_fast;
 	DATA_PORT = byte;
-	strobeEnableFast;
-	waitBusy();
+	strobe_enable_fast;
+	wait_busy();
 }
 
-static void setAddress(uint8_t page, uint8_t col)
+static void set_address(uint8_t page, uint8_t col)
 {
-	RScommand;
-	sendByte(0x40 | (0x3F & col));
-	sendByte(0xB8 | (0x07 & page));
-	RSdata;
+	set_type_cmd;
+	send_byte(0x40 | (0x3F & col));
+	send_byte(0xB8 | (0x07 & page));
+	set_type_data;
 }
 
 /*
 Sends data to selected address, chipID for selecting part 1=left 2=middle 4=right
 sum for simultaneously turning few segments*/
-static void sendData(uint8_t size, const uint8_t * buff)
+static void send_data(uint8_t size, const uint8_t * buff)
 {
 	for (uint8_t i = 0; i < size; i++)
-		sendByte(*buff++);
+		send_byte(*buff++);
 }
 
 /***
 test function to fill, chipID for selecting part 1=left 2=middle 4=right
 sum for simultaneously turning few segments*/
-static void testfillPage(uint8_t page, uint8_t pattern, uint8_t chipID)
+static void test_fill_page(uint8_t page, uint8_t pattern, uint8_t chipID)
 {
-	selectChip(chipID);
-	setAddress(page,0);
+	select_chip(chipID);
+	set_address(page,0);
 	for (uint8_t i = 0; i < 64; i++)
 	{
-		sendByte(pattern);
+		send_byte(pattern);
 	}
-	deselectChip(chipID);
+	deselect_chip(chipID);
 }
 
 /*
 Reads data from selected address, chipID for selecting part 1=left 2=middle 4=right
 sum for simultaneously turning few segments*/
-static void readData(uint8_t size, uint8_t * buff)
+static void read_data(uint8_t size, uint8_t * buff)
 {
-	RWread;
+	set_state_read;
 	DATA_DDR = INPUT_8BIT;
 	DATA_PORT = PULLUP_8BIT;
-	RSdata;
-	getByte();
-	RScommand;
-	while (getByte() & (HIGH << BUSY_FLAG));
+	set_type_data;
+	get_byte();
+	set_type_cmd;
+	while (get_byte() & (HIGH << BUSY_FLAG));
 	for (uint8_t i = 0; i < size; i++)
 	{
-		RSdata;
-		*buff++ = getByte();
-		RScommand;
-		while (getByte() & (HIGH << BUSY_FLAG));
+		set_type_data;
+		*buff++ = get_byte();
+		set_type_cmd;
+		while (get_byte() & (HIGH << BUSY_FLAG));
 	}
 	DATA_PORT = LOW;
 	DATA_DDR = OUTPUT_8BIT;
-	RWwrite;
-	RSdata;
+	set_state_write;
+	set_type_data;
 }
 
 /*
 Gives possibility for shift up/down, chipID for selecting part 1=left 2=middle 4=right
 sum for simultaneously turning few segments*/
-static void setStartLine(uint8_t start, uint8_t chipID)
+static void set_start_line(uint8_t start, uint8_t chip_id)
 {
-	RScommand;
-	selectChip(chipID);
-	sendByte(0xC0 | start);
-	deselectChip(chipID);
-	RSdata;
+	set_type_cmd;
+	select_chip(chip_id);
+	send_byte(0xC0 | start);
+	deselect_chip(chip_id);
+	set_type_data;
 }
 
 
@@ -212,81 +216,80 @@ void TG_init(void)
 	RES_PIN_PORT &= ~(HIGH << RES_PIN_NUM);
 	
 	//initialize display
-	strobeReset;
-	RSdata;
-	RWwrite;
+	strobe_reset;
+	set_type_data;
+	set_state_write;
 	DELAY_MS(35);
 	TG_trun_on(0x7);
-	setStartLine(0,0x7);
-	cs1deselect;
-	cs2deselect;
-	cs3deselect;
+	set_start_line(0,0x7);
+	cs1_deselect;
+	cs2_deselect;
+	cs3_deselect;
 }
 
-void TG_trun_on(uint8_t chipID)
+void TG_trun_on(uint8_t chip_id)
 {
-	RScommand;
-	selectChip(chipID);
-	sendByte(0x3F);
-	deselectChip(chipID);
-	RSdata;
+	set_type_cmd;
+	select_chip(chip_id);
+	send_byte(0x3F);
+	deselect_chip(chip_id);
+	set_type_data;
 }
 
-void TG_turn_off(uint8_t chipID)
+void TG_turn_off(uint8_t chip_id)
 {
-	RScommand;
-	selectChip(chipID);
-	sendByte(0x3E);
-	deselectChip(chipID);
-	RSdata;
+	set_type_cmd;
+	select_chip(chip_id);
+	send_byte(0x3E);
+	deselect_chip(chip_id);
+	set_type_data;
 }
 
-uint8_t TG_get_stat(uint8_t chipID)
+uint8_t TG_get_stat(uint8_t chip_id)
 {
 	DATA_DDR = INPUT_8BIT;
 	DATA_PORT = PULLUP_8BIT;
-	RWread;
-	uint8_t RSstate = RSreadState;
-	RScommand;
-	selectChip(chipID);
-	uint8_t res = getByte();
-	deselectChip(chipID);
+	set_state_read;
+	uint8_t rs_state = read_rs;
+	set_type_cmd;
+	select_chip(chip_id);
+	uint8_t res = get_byte();
+	deselect_chip(chip_id);
 	DATA_PORT = LOW;
 	DATA_DDR = OUTPUT_8BIT;
-	RWwrite;
-	if (RSstate)
-		RSdata;
+	set_state_write;
+	if (rs_state)
+		set_type_data;
 	else
-		RScommand;
+		set_type_cmd;
 	return res;
 }
 
 /************************************************************************/
-/* return Bytes needed to send to specific chip in BytesToSendBuff
-return chipIDStart which indicates starting display number and function returns
-number of chips select changes needed                                */
+/* returns number of chip changes needed, and tx_info_st. Takes position
+of first pixel (min) and last (max) on X axis        */
 /************************************************************************/
 //static uint8_t getSendBytesInfo(uint8_t min, uint8_t max, uint8_t * BytesToSendBuff, uint8_t * chipIDStart)
-static uint8_t getSendBytesInfo(uint8_t min, uint8_t max, chipTransferInfo * info)
+static uint8_t calc_tx_info(uint8_t min, uint8_t max, tx_info_st * info)
 {
-	info->StartchipID = min / XPointsPerChip;
+	info->start_id = min / XPointsPerChip;
 	uint8_t chipIDend = (max - 1)/XPointsPerChip;
-	uint8_t csChanges = chipIDend - info->StartchipID;
+	uint8_t csChanges = chipIDend - info->start_id;
 	
 	if (0 == csChanges)
 	{
-		info->BytesPerChip[info->StartchipID] = max - min;
+		info->bytes_per_chip[info->start_id] = max - min;
 	}
 	else if (1 == csChanges)
 	{
-		info->BytesPerChip[info->StartchipID] = (info->StartchipID + 1) * XPointsPerChip - min;
-		info->BytesPerChip[info->StartchipID + 1] = max - (info->StartchipID + 1) *XPointsPerChip;
+		info->bytes_per_chip[info->start_id] = (info->start_id + 1) * XPointsPerChip - min;
+		info->bytes_per_chip[info->start_id + 1] = max - (info->start_id + 1) *XPointsPerChip;
 	}
 	else if (2 == csChanges)
 	{
-		info->BytesPerChip[info->StartchipID] = XPointsPerChip - min;
-		info->BytesPerChip[info->StartchipID + 1] = XPointsPerChip;
-		info->BytesPerChip[info->StartchipID + 2] = max - 2*XPointsPerChip;
+		info->bytes_per_chip[info->start_id] = XPointsPerChip - min;
+		info->bytes_per_chip[info->start_id + 1] = XPointsPerChip;
+		info->bytes_per_chip[info->start_id + 2] = max - 2*XPointsPerChip;
 	}
 	else
 		return BadValue;
@@ -299,159 +302,165 @@ static uint8_t getSendBytesInfo(uint8_t min, uint8_t max, chipTransferInfo * inf
 /* special function for selecting only one chip with different approach
  1 == leftSeg, 2 == midSeg, 3== rightSeg                                */
 /************************************************************************/
-static void selectChipOne(uint8_t ID)
+static void select_1_chip(uint8_t chip_id)
 {
-	if (0 == ID)
-		cs1select;
-	if (1 == ID)
-		cs2select;
-	if (2 == ID)
-		cs3select;
+	switch(chip_id)
+	{
+		case 0 : cs1_select;
+				break;
+		case 1 : cs2_select;
+				break;
+		case 2: cs3_select;
+				break;
+	}
 }
 
 /************************************************************************/
 /* special function for deselecting only one chip with different approach
  1 == leftSeg, 2 == midSeg, 3== rightSeg                                */
 /************************************************************************/
-static void deselectChipOne(uint8_t ID)
+static void deselect_1_chip(uint8_t chip_id)
 {
-	if (0 == ID)
-		cs1deselect;
-	if (1 == ID)
-		cs2deselect;
-	if (2 == ID)
-		cs3deselect;
+	switch(chip_id)
+	{
+		case 0 : cs1_deselect;
+				break;
+		case 1 : cs2_deselect;
+				break;
+		case 2: cs3_deselect;
+				break;
+	}
 }
 
 /************************************************************************/
 /* function to create mask with bits written from MSB                   */
 /************************************************************************/
-static inline uint8_t makeMask(uint8_t bits)
+static inline uint8_t make_mask(uint8_t bits)
 {
-	uint8_t specMask = 0x0;
+	uint8_t spec_mask = 0x0;
 	while(bits--)
-	specMask |= 1 << (7 - bits);
-	return specMask;
+	spec_mask |= HIGH << (7 - bits);
+	return spec_mask;
 }
 
 /************************************************************************/
 /* function to create mask with bits written from LSB                   */
 /************************************************************************/
-static inline uint8_t makeReverseMask(uint8_t bits)
+static inline uint8_t make_rev_mask(uint8_t bits)
 {
-	uint8_t specMask = 0x0;
+	uint8_t spec_mask = 0x0;
 	while (bits--)
 	{
-		specMask <<=1;
-		specMask |= 1 << 0;
+		spec_mask <<=1;
+		spec_mask |= HIGH;
 	}
-	return specMask;
+	return spec_mask;
 }
 
 /************************************************************************/
 /* fills page  from given col by pattern                                */
 /************************************************************************/
-static inline void fillPage(const sendParam * param)
+static inline void fill_page(const tx_param_st * param)
 {
-	setAddress(param->page,param->col);
-	for (uint8_t i = 0; i < param->BytesToSend; i++)
-		sendByte(param->offset);
+	set_address(param->page,param->col);
+	for (uint8_t i = 0; i < param->bytes_to_send; i++)
+		send_byte(param->offset);
 }
 
 
 /************************************************************************/
 /* Clears selected area by mask bits, invert for Up rows.               */
 /************************************************************************/
-static inline void clearMaskPage(const sendParam * param, uint8_t invert)
+static void clear_page_mask(const tx_param_st * param, uint8_t invert)
 {
-	setAddress(param->page, param->col);
-	readData(param->BytesToSend,pageBuff);
-	uint8_t maskUp = makeMask(param->offset);
+	set_address(param->page, param->col);
+	read_data(param->bytes_to_send,page_buff);
+	uint8_t maskUp = make_mask(param->offset);
 	if (invert)
 		maskUp = ~maskUp;
-	for (uint8_t i = 0; i < param->BytesToSend; i++)
-		pageBuff[i] = pageBuff[i] & maskUp;
-	setAddress(param->page, param->col);
-	sendData(param->BytesToSend,pageBuff);
+	for (uint8_t i = 0; i < param->bytes_to_send; i++)
+		page_buff[i] = page_buff[i] & maskUp;
+	set_address(param->page, param->col);
+	send_data(param->bytes_to_send,page_buff);
 }
 
 /************************************************************************/
 /*Clears display in selected rectangle area that starts at
 PointA(posX,posY) and ends at PointB(posX,PosY)						   */
 /************************************************************************/
-void TG_clear_area(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
+void TG_clear_area(uint8_t A_x, uint8_t A_y, uint8_t B_x, uint8_t B_y)
 {
-	if (posXpointA >= XPoints || posXpointB >= XPoints
-	|| posYpointA >= YPoints || posYpointB >= YPoints)
+	if (A_x >= XPoints || B_x >= XPoints
+	|| A_y >= YPoints || B_y >= YPoints)
 	return;
 	
-	uint8_t setX, setY; //coordinates of start point
-	uint8_t endX, endY; //coordinates of end point
-	if (posXpointA > posXpointB) // sets coordinates for writing to display from left to right;
+	uint8_t set_x, set_y; //coordinates of start point
+	uint8_t end_x, end_y; //coordinates of end point
+	if (A_x > B_x) // sets coordinates for writing to display from left to right;
 	{
-		setX = posXpointB;
-		setY = posYpointB;
-		endX = posXpointA;
-		endY = posYpointA;
+		set_x = B_x;
+		set_y = B_y;
+		end_x = A_x;
+		end_y = A_y;
 	}
 	else
 	{
-		setX = posXpointA;
-		setY = posYpointA;
-		endX = posXpointB;
-		endY = posYpointB;
+		set_x = A_x;
+		set_y = A_y;
+		end_x = B_x;
+		end_y = B_y;
 	}
-	uint8_t colStart = setX%XPointsPerChip;
-	uint8_t pageSup = endY/YPointsPerPage;
-	uint8_t pageInf = setY/YPointsPerPage;
-	uint8_t rowsSup = (endY - 1)%YPointsPerPage;
-	uint8_t rowsInf = setY%YPointsPerPage;
-	uint8_t pagesToChange = pageSup - pageInf + 1;
-	pageSup = 0x07 & ~pageSup;		//change direction of pages from 7->0, to 0->7
+	uint8_t col_start = set_x%XPointsPerChip;
+	uint8_t page_max = end_y/YPointsPerPage;
+	uint8_t page_min = set_y/YPointsPerPage;
+	uint8_t row_max = (end_y - 1)%YPointsPerPage;
+	uint8_t row_min = set_y%YPointsPerPage;
+	uint8_t page_changes = page_max - page_min + 1;
+	page_max = 0x07 & ~page_max;		//change direction of pages from 7->0, to 0->7
 	
-	chipTransferInfo TransInfo;
-	uint8_t csChangesNeeded = getSendBytesInfo(setX,endX + 1,&TransInfo);
-	uint8_t colToSend;
+	tx_info_st tx_info;
+	uint8_t cs_changes = calc_tx_info(set_x,end_x + 1,&tx_info);
+	uint8_t col_set;
 	uint8_t iteration = 0;
-	sendParam TxInfo;
-	while (csChangesNeeded--)
+	tx_param_st tx_param;
+	while (cs_changes--)
 	{
 		if (0 == iteration++)
-		colToSend = colStart;
+		col_set = col_start;
 		else
-		colToSend = 0;
+		col_set = 0;
 		
-		selectChipOne(TransInfo.StartchipID);
-		for(uint8_t i = 0; i < pagesToChange; i++)
+		select_1_chip(tx_info.start_id);
+		for(uint8_t i = 0; i < page_changes; i++)
 		{
-			TxInfo.BytesToSend = TransInfo.BytesPerChip[TransInfo.StartchipID];
-			TxInfo.col = colToSend;
-			TxInfo.page = pageSup + i;
-			if (0 == i && rowsSup != 0)
+			tx_param.bytes_to_send = tx_info.bytes_per_chip[tx_info.start_id];
+			tx_param.col = col_set;
+			tx_param.page = page_max + i;
+			if (0 == i && row_max != 0)
 			{
-				TxInfo.offset = rowsSup;
-				clearMaskPage(&TxInfo, true); //reverse mask 
+				tx_param.offset = row_max;
+				clear_page_mask(&tx_param, true); //reverse mask 
 			}
-			else if (0 == i && rowsInf != 0)
+			else if (0 == i && row_min != 0)
 			{
-				TxInfo.offset = rowsInf;
-				clearMaskPage(&TxInfo, false); //don't reverse mask
+				tx_param.offset = row_min;
+				clear_page_mask(&tx_param, false); //don't reverse mask
 			}
 			else
 			{
-				TxInfo.offset = 0x00; // used as pattern for every byte not offset!
-				fillPage(&TxInfo);
+				tx_param.offset = 0x00; // used as pattern for every byte, not offset!
+				fill_page(&tx_param);
 			}
 		}
-		deselectChipOne(TransInfo.StartchipID++);
+		deselect_1_chip(tx_info.start_id++);
 	}
 }
 
 // used by clearDisplayFull
-static inline void sendPattern(uint8_t size, uint8_t pattern)
+static inline void send_pattern(uint8_t size, uint8_t pattern)
 {
 	for (uint8_t i = 0; i < size; i++)
-		sendByte(pattern);
+		send_byte(pattern);
 }
 
 
@@ -460,16 +469,16 @@ static inline void sendPattern(uint8_t size, uint8_t pattern)
 /************************************************************************/
 void TG_clear_full(void)
 {
-	uint8_t chipID = 0;
-	while (chipID < 3)
+	uint8_t chip_id = 0;
+	while (chip_id < 3)
 	{
-		selectChipOne(chipID);
+		select_1_chip(chip_id);
 		for (uint8_t i=0; i < 8; i++)
 		{
-			setAddress(i,0);
-			sendPattern(XPointsPerChip, 0x0);
+			set_address(i,0);
+			send_pattern(XPointsPerChip, 0x0);
 		}
-		deselectChipOne(chipID++);
+		deselect_1_chip(chip_id++);
 	}
 }
 
@@ -480,260 +489,260 @@ void TG_reverse_all(void)
 {
 	for (uint8_t chip = 0; chip < 3; chip++)
 	{
-		selectChipOne(chip);
+		select_1_chip(chip);
 		for (uint8_t page = 0; page < YPoints/YPointsPerPage; page++)
 		{
-			setAddress(page, 0);
-			readData(XPointsPerChip,pageBuff);
+			set_address(page, 0);
+			read_data(XPointsPerChip,page_buff);
 			for (uint8_t i = 0; i < XPointsPerChip; i++)
-				pageBuff[i] ^= 0xFF;
-			setAddress(page,0);
+				page_buff[i] ^= 0xFF;
+			set_address(page,0);
 			for (uint8_t i = 0; i < XPointsPerChip; i++)
-				sendByte(pageBuff[i]);
+				send_byte(page_buff[i]);
 		}
-		deselectChipOne(chip);
+		deselect_1_chip(chip);
 	}
 }
 
-//Creates images using mask based on bits needed to be cleared, work only on selected rows from up or down (selection by inverting mask)
-static inline void DrawMaskPage(const sendParam * param, uint8_t invert, const uint8_t * image)
+//Creates images using mask based on bits needed to be cleared, work only on selected rows from up or down (selection by reversing mask)
+static inline void draw_page_mask(const tx_param_st * param, uint8_t rev, const uint8_t * img_ptr)
 {
-	setAddress(param->page, param->col);
-	readData(param->BytesToSend,pageBuff);
-	uint8_t maskUp = makeMask(param->offset);
-	if (invert)
-		maskUp = ~maskUp;
-	for (uint8_t i = 0; i < param->BytesToSend; i++)
+	set_address(param->page, param->col);
+	read_data(param->bytes_to_send,page_buff);
+	uint8_t upper_mask = make_mask(param->offset);
+	if (rev)
+		upper_mask = ~upper_mask;
+	for (uint8_t i = 0; i < param->bytes_to_send; i++)
 	{
-		pageBuff[i] = pageBuff[i] & maskUp;
-		if (invert)
-			pageBuff[i] |= (image[i] << (8 - param->offset) );
+		page_buff[i] = page_buff[i] & upper_mask;
+		if (rev)
+			page_buff[i] |= (img_ptr[i] << (8 - param->offset) );
 		else
-			pageBuff[i] |= (image[i] >> param->offset );
+			page_buff[i] |= (img_ptr[i] >> param->offset );
 	}
-	setAddress(param->page, param->col);
-	sendData(param->BytesToSend,pageBuff);
+	set_address(param->page, param->col);
+	send_data(param->bytes_to_send,page_buff);
 }
 
-//Creates images using mask based on bits needed to be cleared, work on all rows
-static inline void DrawPage(const sendParam * param, const uint8_t * imageBefore, const uint8_t * imageNow)
+/************************************************************************/
+/*Creates images using mask based on bits needed to be cleared and pointers
+to last page and page used now, works on all rows*/
+/************************************************************************/
+static inline void draw_page(const tx_param_st * param, const uint8_t * img_before_ptr, const uint8_t * img_now_ptr)
 {
-	setAddress(param->page, param->col);
-	uint8_t topMask = makeMask(param->offset);
-	uint8_t offsetDown;
+	set_address(param->page, param->col);
+	uint8_t top_mask = make_mask(param->offset);
+	uint8_t bottom_mask;
 	if (param->offset == 0)
-		offsetDown = 0;
+		bottom_mask = 0;
 	else
-		offsetDown = 8 - param->offset;
-	for (uint8_t i = 0; i < param->BytesToSend; i++)
+		bottom_mask = 8 - param->offset;
+	for (uint8_t i = 0; i < param->bytes_to_send; i++)
 	{
-		pageBuff[i] = (imageNow[i] & ~topMask) >> offsetDown;
+		page_buff[i] = (img_now_ptr[i] & ~top_mask) >> bottom_mask;
 		if (param->offset != 0)
-			pageBuff[i] |= (imageBefore[i] & topMask) << param->offset;
+			page_buff[i] |= (img_before_ptr[i] & top_mask) << param->offset;
 	}
-	sendData(param->BytesToSend,pageBuff);
+	send_data(param->bytes_to_send,page_buff);
 }
 
 /*
 Prints image from buff in given X,Y coordinates with defined sizeX x sizeY image size
 */
-void TG_image(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY, const uint8_t * buff)
+void TG_image(uint8_t x, uint8_t y, uint8_t x_size, uint8_t y_size, const uint8_t * img_ptr)
 {
-	if (posX + sizeX > XPoints || posY + sizeY> YPoints)
+	if (x + x_size > XPoints || y + y_size> YPoints)
 		return;
 	
-	uint8_t colStart = posX%XPointsPerChip;
-	uint8_t pageSup = (posY + sizeY - 1)/YPointsPerPage;
-	uint8_t pageInf = posY/YPointsPerPage;
-	uint8_t rowsSup = (posY + sizeY)%YPointsPerPage;
-	uint8_t rowsInf = posY%YPointsPerPage;
-	uint8_t pagesToChange = pageSup - pageInf + 1;
-	pageSup = 0x07 & ~pageSup;
+	uint8_t col_start = x%XPointsPerChip;
+	uint8_t page_max = (y + y_size - 1)/YPointsPerPage;
+	uint8_t page_min = y/YPointsPerPage;
+	uint8_t row_max = (y + y_size)%YPointsPerPage;
+	uint8_t row_min = y%YPointsPerPage;
+	uint8_t page_changes = page_max - page_min + 1;
+	page_max = 0x07 & ~page_max;
 	
-	chipTransferInfo TransInfo;
-	uint8_t csChangesNeeded = getSendBytesInfo(posX,posX+sizeX,&TransInfo);
-	uint8_t colToSend;
+	tx_info_st tx_info;
+	uint8_t cs_changes = calc_tx_info(x,x+x_size,&tx_info);
+	uint8_t col_set;
 	uint8_t iteration = 0;
 	
-	uint8_t startXPointer = 0;
-	uint16_t startYPointer = 0;
-	sendParam TxInfo;
-	while (csChangesNeeded--)
+	uint8_t x_start = 0;
+	uint16_t y_start = 0;
+	tx_param_st TxInfo;
+	while (cs_changes--)
 	{
 		if (0 == iteration++)
-		colToSend = colStart;
+		col_set = col_start;
 		else
-		colToSend = 0;
+		col_set = 0;
 		
-		selectChipOne(TransInfo.StartchipID);
-		startYPointer = 0;
-		for(uint8_t i = 0; i < pagesToChange; i++)
+		select_1_chip(tx_info.start_id);
+		y_start = 0;
+		for(uint8_t i = 0; i < page_changes; i++)
 		{
-			TxInfo.BytesToSend = TransInfo.BytesPerChip[TransInfo.StartchipID];
-			TxInfo.col = colToSend;
-			TxInfo.page = pageSup + i;
-			TxInfo.offset = rowsSup;
-			const uint8_t* setBuffAddress  = buff + startXPointer + startYPointer;
-			if (0 == i && rowsSup != 0)
-				DrawMaskPage(&TxInfo, true, setBuffAddress);
-			else if (pagesToChange - 1 == i && rowsInf != 0)
+			TxInfo.bytes_to_send = tx_info.bytes_per_chip[tx_info.start_id];
+			TxInfo.col = col_set;
+			TxInfo.page = page_max + i;
+			TxInfo.offset = row_max;
+			const uint8_t* cur_buff_ptr  = img_ptr + x_start + y_start;
+			if (0 == i && row_max != 0)
+				draw_page_mask(&TxInfo, true, cur_buff_ptr);
+			else if (page_changes - 1 == i && row_min != 0)
 			{
-				TxInfo.offset = rowsInf;
-				DrawMaskPage(&TxInfo, false, setBuffAddress - sizeY);
+				TxInfo.offset = row_min;
+				draw_page_mask(&TxInfo, false, cur_buff_ptr - y_size);
 			}
 			else
-				DrawPage(&TxInfo, setBuffAddress - sizeY, setBuffAddress);
-			startYPointer += sizeY;
+				draw_page(&TxInfo, cur_buff_ptr - y_size, cur_buff_ptr);
+			y_start += y_size;
 		}
-		deselectChipOne(TransInfo.StartchipID++);
-		startXPointer += TxInfo.BytesToSend;
+		deselect_1_chip(tx_info.start_id++);
+		x_start += TxInfo.bytes_to_send;
 	}
 }
 
 typedef struct
 {
-	uint8_t verHor; // if 0 line is more horizontal than vertical, 1 otherwise
-	int8_t yDir; // 1 when A_posY > B_posY, -1 when A_posY < B_posY, 0 when A_posY == B_posY
-	uint8_t firstSegLen; // how many bits to write first
-	//uint8_t pixelsPerChange;	// indicates after how many x/y dots, y/x must be inc/dec (needed for lines when endY - setY != 0
-	int8_t pixelsToChange; //used for counting pixels before change
-	uint8_t rowTypePtr; // used when verHor == 1 (indicates how many writes verticaly) CHANGED!!!! //points which type of row is printing now
-	int8_t rowTypeCount[3]; // 0 left, 1 middle, 2 right
-	uint8_t rowLen[2]; // 0 normal, 1 special
-} lineParam_st;
+	uint8_t line_type; // if 0 line is more horizontal than vertical, 1 otherwise
+	int8_t y_dir; // 1 when A_posY > B_posY, -1 when A_posY < B_posY, 0 when A_posY == B_posY
+	uint8_t first_seg_len; // how many bits to write first
+	int8_t pixel_changes; //used for counting pixels before change
+	uint8_t row_type_ptr; // used when verHor == 1 (indicates how many writes verticaly) CHANGED!!!! //points which type of row is printing now
+	int8_t row_type_cnt[3]; // 0 left, 1 middle, 2 right
+	uint8_t row_len[2]; // 0 normal, 1 special
+} line_param_st;
 
 /************************************************************************/
 /* draws line horizontally                                              */
 /************************************************************************/
-static inline void drawHor(sendParam * param, lineParam_st * step)
+static inline void draw_hor(tx_param_st * param, line_param_st * step)
 {
-	if (0 == step->yDir)
+	if (0 == step->y_dir)
 	{
-		setAddress(param->page, param->col);
-		readData(param->BytesToSend, pageBuff);
-		for (uint8_t i = 0; i < param->BytesToSend; i++)
-			pageBuff[i] |= (1 << param->offset);
-		setAddress(param->page, param->col);
-		sendData(param->BytesToSend, pageBuff);
+		set_address(param->page, param->col);
+		read_data(param->bytes_to_send, page_buff);
+		for (uint8_t i = 0; i < param->bytes_to_send; i++)
+			page_buff[i] |= (1 << param->offset);
+		set_address(param->page, param->col);
+		send_data(param->bytes_to_send, page_buff);
 		param->col = 0;
 	}
 	else
 	{
-		uint8_t allBytesSent = 0;
-		int8_t rowsCheck = param->offset;
-		uint8_t bytesToSend = param->BytesToSend;
+		uint8_t all_bytes_sent = 0;
+		int8_t rows_checked = param->offset;
+		uint8_t bytes_to_send = param->bytes_to_send;
 		// = step->rowTypePtr;
-		uint8_t bytesSent = 0;
-		uint8_t BytesChange = 0;
-		uint8_t iteration = 0;
+		uint8_t bytes_sent = 0;
+		uint8_t bytes_change = 0;
 		uint8_t change = 0; // change from toWrite
-		while (allBytesSent < bytesToSend)
+		while (all_bytes_sent < bytes_to_send)
 		{
-			uint8_t tmpChange = 0;
-			uint8_t typePtr = step->rowTypePtr;
-			uint8_t rowLen;
+			uint8_t tmp_change = 0;
+			uint8_t type_ptr = step->row_type_ptr;
+			uint8_t row_len;
 			//if ( !(PINC & 1 << 7) && step->firstSegLen != 0)
 				//PORTB ^= 1 << 0;
-			if (0 != step->firstSegLen)
+			if (0 != step->first_seg_len)
 			{
-				allBytesSent =step->firstSegLen;
-				rowsCheck += step->yDir;
-				step->firstSegLen = 0;
-				if (step->rowTypeCount[step->rowTypePtr] == 1)
-					typePtr++;
-				else if (step->rowTypeCount[step->rowTypePtr] > 1)
+				all_bytes_sent =step->first_seg_len;
+				rows_checked += step->y_dir;
+				step->first_seg_len = 0;
+				if (step->row_type_cnt[step->row_type_ptr] == 1)
+					type_ptr++;
+				else if (step->row_type_cnt[step->row_type_ptr] > 1)
 				{
-					tmpChange = 1;
-					step->rowTypeCount[step->rowTypePtr]--;
+					tmp_change = 1;
+					step->row_type_cnt[step->row_type_ptr]--;
 				}
 			}
 				//allBytesSent += step->rowLen[ 1 == typePtr ? 0 : 1];
 				
-			while (allBytesSent < bytesToSend)
+			while (all_bytes_sent < bytes_to_send)
 			{
-				rowLen = step->rowLen [ 1 == typePtr ? 0 : 1];
-				int8_t toWrite = bytesToSend - allBytesSent;
-				change = (toWrite%rowLen != 0);
+				row_len = step->row_len [ 1 == type_ptr ? 0 : 1];
+				int8_t bytes_to_write = bytes_to_send - all_bytes_sent;
+				change = (bytes_to_write%row_len != 0);
 				//int8_t tmpRowsCheck = rowsCheck;
-				if (1 == step->yDir)
+				if (1 == step->y_dir)
 				{
-					if (rowsCheck + step->rowTypeCount[typePtr] > 7)
+					if (rows_checked + step->row_type_cnt[type_ptr] > 7)
 					{
-						allBytesSent += rowLen * (8 - rowsCheck);
-						rowsCheck += (toWrite/rowLen + change);
+						all_bytes_sent += row_len * (8 - rows_checked);
+						rows_checked += (bytes_to_write/row_len + change);
 						break;
 					}
 					else
 					{
-						allBytesSent +=	step->rowTypeCount[typePtr] * rowLen;
-						rowsCheck += step->rowTypeCount[typePtr++];
+						all_bytes_sent +=	step->row_type_cnt[type_ptr] * row_len;
+						rows_checked += step->row_type_cnt[type_ptr++];
 					}
 				}
 				else // if (-1 == step->ydir)
 				{
-					if (rowsCheck - step->rowTypeCount[typePtr] < 0)
+					if (rows_checked - step->row_type_cnt[type_ptr] < 0)
 					{
-						allBytesSent += rowLen * (rowsCheck + 1);
-						rowsCheck -= (toWrite/rowLen) + change;
+						all_bytes_sent += row_len * (rows_checked + 1);
+						rows_checked -= (bytes_to_write/row_len) + change;
 						
 						break;
 					}
 					else
 					{
-						allBytesSent +=	step->rowTypeCount[typePtr] * rowLen;
-						rowsCheck -= step->rowTypeCount[typePtr++];
+						all_bytes_sent +=	step->row_type_cnt[type_ptr] * row_len;
+						rows_checked -= step->row_type_cnt[type_ptr++];
 					}
 				}
 			}
-			if (tmpChange == 1)
+			if (tmp_change == 1)
 			{
-				step->rowTypeCount[step->rowTypePtr]++;
-				tmpChange = 0;
+				step->row_type_cnt[step->row_type_ptr]++;
+				tmp_change = 0;
 			}
-			if (allBytesSent >= bytesToSend)
+			if (all_bytes_sent >= bytes_to_send)
 			{
-				step->firstSegLen = allBytesSent - bytesToSend;
-				allBytesSent = bytesToSend;
+				step->first_seg_len = all_bytes_sent - bytes_to_send;
+				all_bytes_sent = bytes_to_send;
 				//if (step->firstSegLen == 0)
 					//_delay_ms(1000);
 			}
-			BytesChange = allBytesSent - bytesSent;
-			setAddress(param->page, param->col);
-			readData(BytesChange, pageBuff);
-			for (uint8_t i = 0; i < BytesChange; i++)
+			bytes_change = all_bytes_sent - bytes_sent;
+			set_address(param->page, param->col);
+			read_data(bytes_change, page_buff);
+			for (uint8_t i = 0; i < bytes_change; i++)
 			{
-				pageBuff[i] |= (1 << param->offset);
-				step->pixelsToChange--;
-				if (0 >= step->pixelsToChange)
+				page_buff[i] |= (1 << param->offset);
+				step->pixel_changes--;
+				if (0 >= step->pixel_changes)
 				{
-					step->rowTypeCount[step->rowTypePtr]--;
-					if (0 >= step->rowTypeCount[step->rowTypePtr])
-						step->rowTypePtr++;
-					param->offset += step->yDir;
+					step->row_type_cnt[step->row_type_ptr]--;
+					if (0 >= step->row_type_cnt[step->row_type_ptr])
+						step->row_type_ptr++;
+					param->offset += step->y_dir;
 					
-					step->pixelsToChange = step->rowLen[ 1 == step->rowTypePtr ? 0 : 1 ];
+					step->pixel_changes = step->row_len[ 1 == step->row_type_ptr ? 0 : 1 ];
 				}
 			}
-			setAddress(param->page,param->col);
-			sendData(BytesChange, pageBuff);
-			if (0 > rowsCheck && !(change && bytesToSend == allBytesSent))
+			set_address(param->page,param->col);
+			send_data(bytes_change, page_buff);
+			if (0 > rows_checked && !(change && bytes_to_send == all_bytes_sent))
 			{
 				param->offset = 7;// + (0 == step->pixelsToChange ? 1 : 0);
-				rowsCheck = param->offset; //?
+				rows_checked = param->offset; //?
 				param->page--;
 			}
-			else if (7 < rowsCheck && !(change && bytesToSend == allBytesSent))
+			else if (7 < rows_checked && !(change && bytes_to_send == all_bytes_sent))
 			{
 				param->offset = 0;//  - (0 == step->pixelsToChange ? 1 : 0);
-				rowsCheck = param->offset;  //?
+				rows_checked = param->offset;  //?
 				param->page++;
 			}
 			//param->col += allBytesSent - bytesSent;
-			bytesSent = allBytesSent;
-			param->col = bytesSent;
-			iteration++;
-			if (step->firstSegLen > step->rowLen[ 1 == step->rowTypePtr ? 0 : 1 ])
-				step->firstSegLen %= step->rowLen[ 1 == step->rowTypePtr ? 0 : 1 ];
+			bytes_sent = all_bytes_sent;
+			param->col = bytes_sent;
+			if (step->first_seg_len > step->row_len[ 1 == step->row_type_ptr ? 0 : 1 ])
+				step->first_seg_len %= step->row_len[ 1 == step->row_type_ptr ? 0 : 1 ];
 		}
 		param->col = 0;
 	}
@@ -742,25 +751,25 @@ static inline void drawHor(sendParam * param, lineParam_st * step)
 /************************************************************************/
 /* draws line vertically                                              */
 /************************************************************************/
-static inline void drawVer(sendParam * param, lineParam_st * step)
+static inline void draw_ver(tx_param_st * param, line_param_st * step)
 {
-	if (1 == param->BytesToSend) //only true when Ay == By
+	if (1 == param->bytes_to_send) //only true when Ay == By
 	{
-		while (0 != step->rowLen[0])
+		while (0 != step->row_len[0])
 		{
 			uint8_t data;
-			setAddress(param->page, param->col);
-			readData(1, &data);
+			set_address(param->page, param->col);
+			read_data(1, &data);
 			while (param->offset >= 0 && param->offset <= 7)
 			{
 				data |= (1 << param->offset);
-				param->offset += step->yDir;
-				step->rowLen[0]--;
-				if (0 == step->rowLen[0])
+				param->offset += step->y_dir;
+				step->row_len[0]--;
+				if (0 == step->row_len[0])
 					break;
 			}
-			setAddress(param->page,param->col);
-			sendByte(data);
+			set_address(param->page,param->col);
+			send_byte(data);
 			if (param->offset < 0)
 			{
 				param->offset = 7;
@@ -775,34 +784,34 @@ static inline void drawVer(sendParam * param, lineParam_st * step)
 	}
 	else
 	{
-		uint8_t rowLen = step->rowLen[ 1 == step->rowTypePtr ? 0 : 1];
-		uint8_t bytesSent = 0;
-		while (bytesSent < param->BytesToSend)
+		uint8_t row_len = step->row_len[ 1 == step->row_type_ptr ? 0 : 1];
+		uint8_t bytes_sent = 0;
+		while (bytes_sent < param->bytes_to_send)
 		{
 			uint8_t data;
-			setAddress(param->page, param->col);
-			readData(1,&data);
-			while(param->offset >= 0 && param->offset <= 7 && rowLen != 0)
+			set_address(param->page, param->col);
+			read_data(1,&data);
+			while(param->offset >= 0 && param->offset <= 7 && row_len != 0)
 			{
 				data |= (1 << param->offset);
-				param->offset += step->yDir;
-				rowLen--;
+				param->offset += step->y_dir;
+				row_len--;
 			}
-			setAddress(param->page, param->col);
-			sendByte(data);
-			if (0 == rowLen)
+			set_address(param->page, param->col);
+			send_byte(data);
+			if (0 == row_len)
 			{
-				step->rowTypeCount[step->rowTypePtr]--;
-				bytesSent++;
+				step->row_type_cnt[step->row_type_ptr]--;
+				bytes_sent++;
 				param->col++;
-				if (0 == step->rowTypeCount[step->rowTypePtr])
+				if (0 == step->row_type_cnt[step->row_type_ptr])
 				{
-					step->rowTypePtr++;
-					if (step->rowTypePtr > 2)
+					step->row_type_ptr++;
+					if (step->row_type_ptr > 2)
 						break;
 				}
-				if (step->rowTypeCount[step->rowTypePtr] > 0)
-					rowLen = step->rowLen[1 == step->rowTypePtr ? 0 : 1];
+				if (step->row_type_cnt[step->row_type_ptr] > 0)
+					row_len = step->row_len[1 == step->row_type_ptr ? 0 : 1];
 			}
 			if (param->offset < 0)
 			{
@@ -822,99 +831,97 @@ static inline void drawVer(sendParam * param, lineParam_st * step)
 /************************************************************************/
 /* Draws line on given chip display using drawVer() and drawHor() fun   */
 /************************************************************************/
-static inline void drawLineChip(sendParam * param, lineParam_st * ldata )
+static inline void line_select_fun(tx_param_st * tx_param, line_param_st * line_param )
 {
-	if (ldata->verHor)
-		drawVer(param, ldata);
+	if (line_param->line_type)
+		draw_ver(tx_param, line_param);
 	else
-		drawHor(param, ldata);
+		draw_hor(tx_param, line_param);
 }
 
 /*
 Draws line from pointA to pointB
 */
-void TG_line(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t posYpointB)
+void TG_line(uint8_t A_x, uint8_t A_y, uint8_t B_x, uint8_t B_y)
 {
 	//if values above max value, don't execute cmd
-	if (posXpointA >= XPoints || posXpointB >= XPoints
-		|| posYpointA >= YPoints || posYpointB >= YPoints)
+	if (A_x >= XPoints || B_x >= XPoints
+		|| A_y >= YPoints || B_y >= YPoints)
 		return;
 	
-	uint8_t setX, setY; //coordinates of start point
-	uint8_t endX, endY; //coordinates of end point
-	if (posXpointA > posXpointB) // sets coordinates for writing to display from left to right;
+	uint8_t set_x, set_y; //coordinates of start point
+	uint8_t end_x, end_y; //coordinates of end point
+	if (A_x > B_x) // sets coordinates for writing to display from left to right;
 	{
-		setX = posXpointB;
-		setY = posYpointB;
-		endX = posXpointA;
-		endY = posYpointA;
+		set_x = B_x;
+		set_y = B_y;
+		end_x = A_x;
+		end_y = A_y;
 	}
 	else
 	{
-		setX = posXpointA;
-		setY = posYpointA;
-		endX = posXpointB;
-		endY = posYpointB;
+		set_x = A_x;
+		set_y = A_y;
+		end_x = B_x;
+		end_y = B_y;
 	}
 	
-	lineParam_st lData;
+	line_param_st line_param;
 	//check direction of writing pages, -1 => form 0 ~ 7 if 1 => from 7 ~ 0, if 0 don't change;
-	lData.yDir = endY - setY ? (endY - setY < 0) ? 1 : -1 : 0; // if endY == setY yDir = 0, else if result negative yDir = 1, else yDir = -1
-	uint8_t dotsX = endX - setX + 1;
-	int8_t dotsY = endY - setY;
-	if (dotsY < 0)
-		dotsY  = -1 * dotsY;
-	dotsY++;
-	if (dotsY > dotsX)
+	line_param.y_dir = end_y - set_y ? (end_y - set_y < 0) ? 1 : -1 : 0; // if endY == setY yDir = 0, else if result negative yDir = 1, else yDir = -1
+	uint8_t dots_x = end_x - set_x + 1;
+	int8_t dots_y = end_y - set_y;
+	if (dots_y < 0)
+		dots_y  = -1 * dots_y;
+	dots_y++;
+	if (dots_y > dots_x)
 	{
-		lData.rowLen[0] = dotsY / dotsX;
-		lData.rowLen[1] = lData.rowLen[0] + 1;
-		lData.rowTypeCount[0] = lData.rowTypeCount[2] = (dotsY % dotsX) / 2;
-		if ( (dotsY % dotsX) % 2 != 0)
-			lData.rowTypeCount[2]++;
-		if (0 != lData.rowTypeCount[0])
-			lData.rowTypePtr = 0;
+		line_param.row_len[0] = dots_y / dots_x;
+		line_param.row_len[1] = line_param.row_len[0] + 1;
+		line_param.row_type_cnt[0] = line_param.row_type_cnt[2] = (dots_y % dots_x) / 2;
+		if ( (dots_y % dots_x) % 2 != 0)
+			line_param.row_type_cnt[2]++;
+		if (0 != line_param.row_type_cnt[0])
+			line_param.row_type_ptr = 0;
 		else
-			lData.rowTypePtr = 1;
-		lData.rowTypeCount[1] = dotsX - lData.rowTypeCount[0] - lData.rowTypeCount[2];
-		lData.verHor = 1;
+			line_param.row_type_ptr = 1;
+		line_param.row_type_cnt[1] = dots_x - line_param.row_type_cnt[0] - line_param.row_type_cnt[2];
+		line_param.line_type = 1;
 	}
 	else
 	{
-		//lData.pixelsPerChange = ;
-		lData.rowLen[0] = dotsX / dotsY;
-		lData.rowLen[1] = lData.rowLen[0] + 1;
-		lData.rowTypeCount[0] = (dotsX % dotsY) / 2;
-		lData.rowTypeCount[2] = (dotsX % dotsY) / 2;
-		if ( (dotsX % dotsY) % 2 != 0)
-			lData.rowTypeCount[2]++;
-		if (0 != lData.rowTypeCount[0])
-			lData.rowTypePtr = 0;
+		line_param.row_len[0] = dots_x / dots_y;
+		line_param.row_len[1] = line_param.row_len[0] + 1;
+		line_param.row_type_cnt[0] = (dots_x % dots_y) / 2;
+		line_param.row_type_cnt[2] = (dots_x % dots_y) / 2;
+		if ( (dots_x % dots_y) % 2 != 0)
+			line_param.row_type_cnt[2]++;
+		if (0 != line_param.row_type_cnt[0])
+			line_param.row_type_ptr = 0;
 		else
-			lData.rowTypePtr = 1;
-		lData.rowTypeCount[1] = dotsY - lData.rowTypeCount[0] - lData.rowTypeCount[2];
-		lData.verHor = 0;
+			line_param.row_type_ptr = 1;
+		line_param.row_type_cnt[1] = dots_y - line_param.row_type_cnt[0] - line_param.row_type_cnt[2];
+		line_param.line_type = 0;
 	}
-	//if (lData.rowTypeCount[1] == 30 && lData.rowTypeCount[0] == 3 && lData.rowTypeCount[2] == 4 && lData.rowLen[0] == 5 && lData.rowLen[1] == 6) return; //DEBUG
-	lData.firstSegLen = 1 == lData.rowTypePtr ? lData.rowLen[0] : lData.rowLen[1]; //if special rows, write special pixels length else normal length
-	lData.pixelsToChange = lData.firstSegLen;
+	line_param.first_seg_len = 1 == line_param.row_type_ptr ? line_param.row_len[0] : line_param.row_len[1]; //if special rows, write special pixels length else normal length
+	line_param.pixel_changes = line_param.first_seg_len;
 	//gets information about chipID write sequence
-	chipTransferInfo transInfo;
-	endX++;
-	uint8_t csChanges = getSendBytesInfo(setX,endX, &transInfo);
-	endX--; //refactor
-	sendParam txInfo; //offset used for row number
-	txInfo.offset = setY % YPointsPerPage;
+	tx_info_st tx_info;
+	end_x++;
+	uint8_t cs_changes = calc_tx_info(set_x,end_x, &tx_info);
+	end_x--; //refactor
+	tx_param_st txInfo; //offset used for row number
+	txInfo.offset = set_y % YPointsPerPage;
 	txInfo.offset = 0x7 & ~txInfo.offset;
-	txInfo.page = setY / YPointsPerPage;
+	txInfo.page = set_y / YPointsPerPage;
 	txInfo.page = 0x07 & ~txInfo.page;		//change direction of pages from 7->0, to 0->7
-	txInfo.col = setX % XPointsPerChip;
-	while (csChanges--)
+	txInfo.col = set_x % XPointsPerChip;
+	while (cs_changes--)
 	{
-		txInfo.BytesToSend = transInfo.BytesPerChip[transInfo.StartchipID];
-		selectChipOne(transInfo.StartchipID);
-		drawLineChip(&txInfo,&lData);
-		deselectChipOne(transInfo.StartchipID++);
+		txInfo.bytes_to_send = tx_info.bytes_per_chip[tx_info.start_id];
+		select_1_chip(tx_info.start_id);
+		line_select_fun(&txInfo,&line_param);
+		deselect_1_chip(tx_info.start_id++);
 	}
 }
 
@@ -922,41 +929,41 @@ void TG_line(uint8_t posXpointA, uint8_t posYpointA, uint8_t posXpointB, uint8_t
 /*
 Draws desired rectangle
 */
-void TG_rectangle(uint8_t posX, uint8_t posY, uint8_t sizeX, uint8_t sizeY)
+void TG_rectangle(uint8_t x, uint8_t y, uint8_t x_size, uint8_t y_size)
 {
-	TG_line(posX, posX, posX, posY+sizeY);
-	TG_line(posX, posY+sizeY, posX +sizeX, posY+sizeY);
-	TG_line(posX+sizeX, posY+sizeY, posX+sizeX, posY);
-	TG_line(posX+sizeX, posY, posX, posY);
+	TG_line(x, x, x, y + y_size);
+	TG_line(x, y + y_size, x + x_size, y + y_size);
+	TG_line(x + x_size, y + y_size, x + x_size, y);
+	TG_line(x + x_size, y, x, y);
 }
 
 
 /************************************************************************/
 /* Writes text from (posX,posY) with given height of letters  and space */
 /************************************************************************/
-void TG_printf(uint8_t posX, uint8_t posY, uint8_t height, uint8_t space, const char * text)
+void TG_printf(uint8_t x, uint8_t y, uint8_t height, uint8_t space, const char * txt)
 {
-	const uint8_t (*ptr)[5];
-	uint8_t charWidth = 0;
-	uint8_t charHight = 0;
+	const uint8_t (*font_ptr)[5];
+	uint8_t font_width = 0;
+	uint8_t font_height = 0;
 	if (height == 7)
 	{
-		ptr = Font8x5;
-		charHight = 8;
-		charWidth = 5;
+		font_ptr = default_f;
+		font_height = 8;
+		font_width = 5;
 	}
-	while (*text != '\0')
+	while (*txt != '\0')
 	{
-		if (posY + charHight >= YPoints)
-			posY -= (posY + charHight - YPoints);
-		if (posX + charWidth >= XPoints)
+		if (y + font_height >= YPoints)
+			y -= (y + font_height - YPoints);
+		if (x + font_width >= XPoints)
 		{
-			posX = 0;
-			posY -= charHight;
+			x = 0;
+			y -= font_height;
 		}
-		TG_image(posX,posY,charWidth,charHight,ptr[(uint8_t)*text]);
-		posX += charWidth + space;
-		text++;
+		TG_image(x, y, font_width, font_height, font_ptr[(uint8_t)*txt]);
+		x += font_width + space;
+		txt++;
 	}
 }
 
@@ -967,39 +974,39 @@ void TG_test(void)
 {
 	for(int i =0; i < 8; i++)
 	{
-		testfillPage(i,makeMask(i),leftSeg);
-		testfillPage(i,0xFF,midSeg);
-		testfillPage(i,0xFF,rightSeg);
+		test_fill_page(i,make_mask(i),TG_left_disp);
+		test_fill_page(i,0xFF,TG_mid_disp);
+		test_fill_page(i,0xFF,TG_right_disp);
 	}
-	setStartLine(0,0x7);
+	set_start_line(0,0x7);
 	DELAY_MS(1000);
 	for (uint8_t i =0; i < 8; i++)
 	{
-		selectChipOne(0);
-		setAddress(i,0);
-		readData(64,pageBuff);
-		deselectChipOne(0);
-		selectChipOne(2);
-		setAddress(i,0);
-		sendData(64,pageBuff);
-		deselectChipOne(2);
+		select_1_chip(0);
+		set_address(i,0);
+		read_data(64,page_buff);
+		deselect_1_chip(0);
+		select_1_chip(2);
+		set_address(i,0);
+		send_data(64,page_buff);
+		deselect_1_chip(2);
 	}
 	DELAY_MS(1000);
-	selectChipOne(0);
+	select_1_chip(0);
 	for (uint8_t i =0; i < 8; i++)
 	{
-		setAddress(i,0);
-		readData(32,pageBuff);
+		set_address(i,0);
+		read_data(32,page_buff);
 		for (uint8_t y=0; y < 32; y++)
-			pageBuff[y] = ~pageBuff[y];
-		setAddress(i,0);
-		sendData(32,pageBuff);
+			page_buff[y] = ~page_buff[y];
+		set_address(i,0);
+		send_data(32,page_buff);
 	}
-	deselectChipOne(0);
+	deselect_1_chip(0);
 	DELAY_MS(1000);
-	TG_turn_off(midSeg);
+	TG_turn_off(TG_mid_disp);
 	TG_clear_area(2,2,188,60);
 	DELAY_MS(1000);
 	TG_reverse_all();
-	TG_trun_on(midSeg);
+	TG_trun_on(TG_mid_disp);
 }

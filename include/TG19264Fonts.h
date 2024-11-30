@@ -10,7 +10,7 @@
 #define FONTS_H_
 
 #ifndef USE_CUSTOM
-const uint8_t Font8x5[128][5] = { //ASCII code ENG only
+const uint8_t default_f[128][5] = { //ASCII code ENG only
 	{0x0}, //blank code[0]
 	{0x0}, //blank code[1]
 	{0x0}, //blank code[2]
