@@ -227,7 +227,7 @@ void TG_init(void)
 	cs3_deselect;
 }
 
-void TG_trun_on(uint8_t chip_id)
+void TG_turn_on(uint8_t chip_id)
 {
 	set_type_cmd;
 	select_chip(chip_id);

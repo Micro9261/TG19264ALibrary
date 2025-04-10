@@ -9,9 +9,9 @@
 #ifndef TG19264A_ATMEGADRIVER_H_
 #define TG19264A_ATMEGADRIVER_H_
 
-#define TG_left_disp 0x1
-#define TG_mid_disp 0x2
-#define TG_right_disp 0x4
+#define TG_left_disp (0x1)
+#define TG_mid_disp (0x2)
+#define TG_right_disp (0x4)
 
 #include <inttypes.h>
 /************************************************************************/
@@ -62,7 +62,7 @@ void TG_turn_off(uint8_t chip_id);
 /* Turns display on, chipID for selecting part 1=left 2=middle 4=right 
 sum for simultaneously turning few segments*/
 /************************************************************************/
-void TG_trun_on(uint8_t chip_id);
+void TG_turn_on(uint8_t chip_id);
 
 /************************************************************************/
 /* Get display status, chipID for selecting part 1=left 2=middle 4=right
