@@ -220,7 +220,7 @@ void TG_init(void)
 	set_type_data;
 	set_state_write;
 	DELAY_MS(35);
-	TG_trun_on(0x7);
+	TG_turn_on(0x7);
 	set_start_line(0,0x7);
 	cs1_deselect;
 	cs2_deselect;
@@ -956,7 +956,7 @@ void TG_printf(uint8_t x, uint8_t y, uint8_t height, uint8_t space, const char *
 	{
 		if (y + font_height >= YPoints)
 			y -= (y + font_height - YPoints);
-		if (x + font_width >= XPoints)
+		if (x + font_width >= XPoints || (*txt == '\n'))
 		{
 			x = 0;
 			y -= font_height;
@@ -1008,5 +1008,5 @@ void TG_test(void)
 	TG_clear_area(2,2,188,60);
 	DELAY_MS(1000);
 	TG_reverse_all();
-	TG_trun_on(TG_mid_disp);
+	TG_turn_on(TG_mid_disp);
 }
